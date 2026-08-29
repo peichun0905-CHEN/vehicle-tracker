@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>車輛管理部 待辦事項追蹤表</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Inter", "Noto Sans TC", -apple-system, sans-serif;
+    background: #F5F3ED;
+    color: #1C2B39;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px; }
+
+  .topbar {
+    background: #1C2B39;
+    color: #F5F3ED;
+    border-radius: 10px;
+    padding: 20px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .topbar h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: 0.5px; }
+  .topbar .sub { font-size: 12px; color: #9FB3C4; margin-top: 4px; font-family: "IBM Plex Mono", monospace; }
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; }
+  .stat { background: rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 16px; text-align: center; min-width: 74px; }
+  .stat .num { font-size: 22px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .stat .lbl { font-size: 11px; color: #9FB3C4; margin-top: 2px; }
+  .stat.red .num { color: #E38A82; }
+  .stat.amber .num { color: #E8B76A; }
+  .stat.green .num { color: #7FBF95; }
+
+  .panel { background: #FFFFFF; border: 1px solid #E1DDD0; border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+  .panel h2 { font-size: 14px; font-weight: 700; margin: 0 0 14px; color: #2C4A63; text-transform: uppercase; letter-spacing: 0.6px; }
+
+  .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .field label { display: block; font-size: 12px; color: #6B6B63; margin-bottom: 4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid #D8D3C6; border-radius: 6px;
+    font-size: 13px; font-family: inherit; background: #FCFBF8; color: #1C2B39;
+  }
+  .field textarea { resize: vertical; min-height: 36px; }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: #2C4A63; }
+
+  .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+  button { font-family: inherit; font-size: 13px; font-weight: 600; border-radius: 6px; padding: 9px 18px; cursor: pointer; border: none; }
+  .btn-primary { background: #2C4A63; color: #FFFFFF; }
+  .btn-primary:hover { background: #23394D; }
+  .btn-primary:disabled { background: #A9B7C2; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: #6B6B63; border: 1px solid #D8D3C6; }
+  .btn-ghost:hover { background: #F0EEE6; }
+
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filters select, .filters input { padding: 7px 10px; border: 1px solid #D8D3C6; border-radius: 6px; font-size: 13px; background: #FCFBF8; }
+  .filters input[type="text"] { min-width: 180px; }
+  .status-tabs { display: flex; gap: 6px; }
+  .status-tab { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #D8D3C6; background: #FCFBF8; color: #6B6B63; }
+  .status-tab.active { background: #2C4A63; color: #fff; border-color: #2C4A63; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6B6B63; padding: 8px 10px; border-bottom: 2px solid #E1DDD0; white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid #EFEDE4; }
+  tbody tr:hover { background: #FAF9F5; }
+  tbody td { padding: 10px; vertical-align: top; }
+  tbody td.mono { font-family: "IBM Plex Mono", monospace; }
+
+  .rail { display: inline-block; width: 4px; height: 32px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
+  .rail.未結案 { background: #C1443C; }
+  .rail.處理中 { background: #D98F32; }
+  .rail.已結案 { background: #3F7D58; }
+
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .badge.未結案 { background: #FCEBEB; color: #791F1F; }
+  .badge.處理中 { background: #FAEEDA; color: #633806; }
+  .badge.已結案 { background: #EAF3DE; color: #27500A; }
+
+  .overdue { color: #C1443C; font-weight: 700; }
+  .row-actions { display: flex; gap: 6px; }
+  .icon-btn { background: transparent; border: 1px solid #D8D3C6; border-radius: 6px; padding: 5px 8px; font-size: 12px; color: #6B6B63; cursor: pointer; }
+  .icon-btn:hover { background: #F0EEE6; }
+  .icon-btn.danger:hover { background: #FCEBEB; color: #791F1F; border-color: #F0999B; }
+
+  .empty { text-align: center; padding: 40px 20px; color: #9A968A; font-size: 13px; }
+
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(28,43,57,0.45); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal-backdrop.show { display: flex; }
+  .modal { background: #fff; border-radius: 10px; padding: 22px 24px; width: 420px; max-width: 92vw; }
+  .modal h3 { margin: 0 0 6px; font-size: 15px; }
+  .modal p { margin: 0 0 18px; font-size: 13px; color: #6B6B63; }
+  .modal .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+  .loading { text-align: center; padding: 60px; color: #9A968A; font-size: 13px; }
+  .setup-warning { background: #FCEBEB; border: 1px solid #F0999B; color: #791F1F; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; line-height: 1.6; }
+  .setup-warning code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; }
+
+  .login-gate { position: fixed; inset: 0; background: rgba(28,43,57,0.55); display: none; align-items: center; justify-content: center; z-index: 100; }
+  .login-gate.show { display: flex; }
+  .login-box { background: #fff; border-radius: 12px; padding: 28px 30px; width: 380px; max-width: 90vw; }
+  .login-box h3 { margin: 0 0 4px; font-size: 16px; color: #1C2B39; }
+  .login-box p { margin: 0 0 18px; font-size: 12px; color: #6B6B63; }
+  .login-box select, .login-box input { width: 100%; padding: 9px 10px; border: 1px solid #D8D3C6; border-radius: 6px; font-size: 13px; margin-bottom: 10px; font-family: inherit; }
+  .login-divider { text-align: center; font-size: 11px; color: #9A968A; margin: 14px 0; position: relative; }
+  .add-self-row { display: flex; gap: 8px; }
+  .add-self-row input { flex: 1; margin-bottom: 0; }
+
+  .identity-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #9FB3C4; }
+  .identity-bar .name-chip { background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px; font-weight: 600; color: #F5F3ED; }
+  .identity-bar button { background: transparent; border: 1px solid rgba(255,255,255,0.25); color: #9FB3C4; padding: 4px 10px; font-size: 11px; font-weight: 600; }
+  .identity-bar button:hover { background: rgba(255,255,255,0.1); }
+
+  .roster-panel { display: none; }
+  .roster-panel.show { display: block; }
+  .roster-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .roster-chip { display: flex; align-items: center; gap: 6px; background: #F0EEE6; border-radius: 20px; padding: 5px 8px 5px 12px; font-size: 12px; }
+  .roster-chip .rm { cursor: pointer; color: #9A968A; font-weight: 700; padding: 0 4px; }
+  .roster-chip .rm:hover { color: #C1443C; }
+
+  .stamp { font-size: 11px; color: #9A968A; margin-top: 3px; }
+
+  @media (max-width: 900px) {
+    .form-grid { grid-template-columns: repeat(2, 1fr); }
+    table { display: block; overflow-x: auto; white-space: nowrap; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="setup-warning-area"></div>
+
+  <div class="topbar">
+    <div>
+      <h1> 車輛管理部 · 待辦事項追蹤表</h1>
+      <div class="sub" id="last-sync">同步中...</div>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
+      <div class="identity-bar">
+        <span>目前身分：</span>
+        <span class="name-chip" id="identity-chip">未登入</span>
+        <button id="btn-switch-identity" type="button">切換身分</button>
+        <button id="btn-toggle-roster" type="button">名單管理</button>
+      </div>
+      <div class="stats">
+        <div class="stat red"><div class="num" id="stat-open">0</div><div class="lbl">未結案</div></div>
+        <div class="stat amber"><div class="num" id="stat-progress">0</div><div class="lbl">處理中</div></div>
+        <div class="stat green"><div class="num" id="stat-closed">0</div><div class="lbl">已結案</div></div>
+        <div class="stat red"><div class="num" id="stat-overdue">0</div><div class="lbl">逾期</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel roster-panel" id="roster-panel">
+    <h2>名單管理</h2>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="roster-id" placeholder="工號" style="width:120px;">
+      <input type="text" id="roster-name" placeholder="姓名" style="flex:1;">
+      <button class="btn-primary" id="btn-roster-add" type="button">新增</button>
+    </div>
+    <div class="roster-list" id="roster-list"></div>
+  </div>
+
+  <div class="panel">
+    <h2>新增待辦事項</h2>
+    <div class="form-grid" id="add-form">
+      <div class="field">
+        <label>處理日期</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="field">
+        <label>車號</label>
+        <input type="text" id="f-car" placeholder="例：KLF0127">
+      </div>
+      <div class="field">
+        <label>站所</label>
+        <select id="f-station">
+          <option value="">請選擇</option>
+          <optgroup label="北一區"><option>台北</option><option>蘆洲</option><option>八里</option><option>北投</option><option>新莊</option><option>三重</option></optgroup><optgroup label="北二區"><option>基隆</option><option>汐止</option><option>中和</option><option>土城</option><option>樹林</option><option>永和</option><option>新店</option><option>信義</option><option>羅東</option><option>花蓮</option><option>宜蘭</option></optgroup><optgroup label="桃竹區"><option>竹科</option><option>新豐</option><option>竹北</option><option>桃園</option><option>龜山</option><option>八德</option><option>南崁</option><option>鶯歌</option><option>平鎮</option><option>楊梅</option><option>新竹</option><option>中壢</option><option>大園</option></optgroup><optgroup label="中區"><option>苗栗</option><option>頭份</option><option>台中</option><option>大里</option><option>中工</option><option>豐原</option><option>烏日</option><option>五權</option><option>沙鹿</option><option>草屯</option><option>南投</option><option>大甲</option></optgroup><optgroup label="彰嘉區"><option>彰化</option><option>和美</option><option>嘉義</option><option>民雄</option><option>員林</option><option>田中</option><option>埤頭</option><option>斗六</option><option>虎尾</option><option>北港</option></optgroup><optgroup label="南區"><option>台南</option><option>安平</option><option>永康</option><option>安南</option><option>高雄</option><option>鳳山</option><option>岡山</option><option>前鎮</option><option>大社</option><option>屏東</option><option>屏工</option><option>新營</option><option>麻豆</option><option>台東</option></optgroup>
+          <option>其他</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>所屬區域</label>
+        <input type="text" id="f-region" placeholder="選站所後自動帶出" readonly style="background:#F0EEE6; color:#6B6B63;">
+      </div>
+      <div class="field">
+        <label>處理人</label>
+        <input type="text" id="f-handler" placeholder="負責人姓名">
+      </div>
+      <div class="field" style="grid-column: span 2;">
+        <label>處理事件</label>
+        <input type="text" id="f-event" placeholder="例：里程異常回覆、車輛維修申請">
+      </div>
+      <div class="field" style="grid-column: span 2;">
+        <label>處理方式</label>
+        <input type="text" id="f-method" placeholder="例：已通知站所複查、送廠檢修中">
+      </div>
+      <div class="field">
+        <label>進度</label>
+        <select id="f-progress">
+          <option>未結案</option>
+          <option>處理中</option>
+          <option>已結案</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>預計完成日</label>
+        <input type="date" id="f-due">
+      </div>
+      <div class="form-actions">
+        <span id="form-error" style="font-size:12px;color:#C1443C;align-self:center;"></span>
+        <button class="btn-ghost" id="btn-clear" type="button">清空欄位</button>
+        <button class="btn-primary" id="btn-submit" type="button">新增</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>清單</h2>
+    <div class="filters">
+      <div class="status-tabs" id="status-tabs">
+        <div class="status-tab active" data-v="全部">全部</div>
+        <div class="status-tab" data-v="未結案">未結案</div>
+        <div class="status-tab" data-v="處理中">處理中</div>
+        <div class="status-tab" data-v="已結案">已結案</div>
+      </div>
+      <select id="filter-region">
+        <option value="">所有區域</option>
+        <option>北一區</option><option>北二區</option><option>桃竹區</option>
+        <option>中區</option><option>彰嘉區</option><option>南區</option>
+      </select>
+      <select id="filter-station">
+        <option value="">所有站所</option>
+        <optgroup label="北一區"><option>台北</option><option>蘆洲</option><option>八里</option><option>北投</option><option>新莊</option><option>三重</option></optgroup><optgroup label="北二區"><option>基隆</option><option>汐止</option><option>中和</option><option>土城</option><option>樹林</option><option>永和</option><option>新店</option><option>信義</option><option>羅東</option><option>花蓮</option><option>宜蘭</option></optgroup><optgroup label="桃竹區"><option>竹科</option><option>新豐</option><option>竹北</option><option>桃園</option><option>龜山</option><option>八德</option><option>南崁</option><option>鶯歌</option><option>平鎮</option><option>楊梅</option><option>新竹</option><option>中壢</option><option>大園</option></optgroup><optgroup label="中區"><option>苗栗</option><option>頭份</option><option>台中</option><option>大里</option><option>中工</option><option>豐原</option><option>烏日</option><option>五權</option><option>沙鹿</option><option>草屯</option><option>南投</option><option>大甲</option></optgroup><optgroup label="彰嘉區"><option>彰化</option><option>和美</option><option>嘉義</option><option>民雄</option><option>員林</option><option>田中</option><option>埤頭</option><option>斗六</option><option>虎尾</option><option>北港</option></optgroup><optgroup label="南區"><option>台南</option><option>安平</option><option>永康</option><option>安南</option><option>高雄</option><option>鳳山</option><option>岡山</option><option>前鎮</option><option>大社</option><option>屏東</option><option>屏工</option><option>新營</option><option>麻豆</option><option>台東</option></optgroup>
+        <option>其他</option>
+      </select>
+      <input type="text" id="filter-search" placeholder="搜尋車號 / 事件 / 處理人">
+    </div>
+    <div id="table-area"><div class="loading">讀取資料中...</div></div>
+  </div>
+
+</div>
+
+<div class="login-gate" id="login-gate">
+  <div class="login-box">
+    <h3>請選擇你是誰</h3>
+    <p>選擇後，你新增/編輯的待辦事項會自動標註你的姓名，方便同仁知道是誰處理的。此設定只存在你自己的瀏覽器裡。</p>
+    <select id="login-select">
+      <option value="">— 從名單選擇 —</option>
+    </select>
+    <button class="btn-primary" id="btn-login-confirm" type="button" style="width:100%;">登入</button>
+    <div class="login-divider">還不在名單上？</div>
+    <div class="add-self-row">
+      <input type="text" id="login-new-id" placeholder="工號" style="width:100px;">
+      <input type="text" id="login-new-name" placeholder="姓名">
+      <button class="btn-ghost" id="btn-login-addself" type="button">加入並登入</button>
+    </div>
+    <div id="login-error" style="font-size:12px;color:#C1443C;margin-top:8px;"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="confirm-backdrop">
+  <div class="modal">
+    <h3>刪除這筆待辦事項？</h3>
+    <p>刪除後無法復原，所有部門同仁都看不到這筆紀錄。</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="confirm-cancel">取消</button>
+      <button class="btn-primary" id="confirm-ok" style="background:#C1443C;">刪除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   請把下面這行換成你自己部署 Google Apps Script 後拿到的網址
+   例如：https://script.google.com/macros/s/AKfycb.../exec
+   ============================================================ */
+const API_URL = "https://script.google.com/macros/s/AKfycbwg282SL60pRiLgzjSOMCEpyn1i3lwr5I9LsoCGfwu9UE57bAimFXPFeSo4WPZL87Oc1Q/exec";
+
+const STATION_REGION = {
+  "台北": "北一區", "蘆洲": "北一區", "八里": "北一區", "北投": "北一區", "新莊": "北一區", "三重": "北一區",
+  "基隆": "北二區", "汐止": "北二區", "中和": "北二區", "土城": "北二區", "樹林": "北二區", "永和": "北二區", "新店": "北二區", "信義": "北二區", "羅東": "北二區", "花蓮": "北二區", "宜蘭": "北二區",
+  "竹科": "桃竹區", "新豐": "桃竹區", "竹北": "桃竹區", "桃園": "桃竹區", "龜山": "桃竹區", "八德": "桃竹區", "南崁": "桃竹區", "鶯歌": "桃竹區", "平鎮": "桃竹區", "楊梅": "桃竹區", "新竹": "桃竹區", "中壢": "桃竹區", "大園": "桃竹區",
+  "苗栗": "中區", "頭份": "中區", "台中": "中區", "大里": "中區", "中工": "中區", "豐原": "中區", "烏日": "中區", "五權": "中區", "沙鹿": "中區", "草屯": "中區", "南投": "中區", "大甲": "中區",
+  "彰化": "彰嘉區", "和美": "彰嘉區", "嘉義": "彰嘉區", "民雄": "彰嘉區", "員林": "彰嘉區", "田中": "彰嘉區", "埤頭": "彰嘉區", "斗六": "彰嘉區", "虎尾": "彰嘉區", "北港": "彰嘉區",
+  "台南": "南區", "安平": "南區", "永康": "南區", "安南": "南區", "高雄": "南區", "鳳山": "南區", "岡山": "南區", "前鎮": "南區", "大社": "南區", "屏東": "南區", "屏工": "南區", "新營": "南區", "麻豆": "南區", "台東": "南區"
+};
+function regionOf(station) { return STATION_REGION[station] || ""; }
+
+let items = [];
+let roster = [];
+let currentUser = null;
+let editingId = null;
+let deletingId = null;
+let currentStatusFilter = "全部";
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+}
+
+function checkSetup() {
+  if (!API_URL || API_URL.indexOf("PASTE_YOUR") === 0) {
+    document.getElementById("setup-warning-area").innerHTML =
+      '<div class="setup-warning">⚠️ 尚未設定資料來源網址。請先部署 Code.gs 中的 Google Apps Script，' +
+      '把拿到的網址貼到這個 HTML 檔案的 <code>API_URL</code>常數裡（在 &lt;script&gt; 區塊最上方），存檔後再開啟。</div>';
+    return false;
+  }
+  return true;
+}
+
+// ---- API helpers ----
+async function apiGet() {
+  const res = await fetch(API_URL, { method: "GET" });
+  return res.json();
+}
+async function apiPost(payload) {
+  // 用 text/plain 避免瀏覽器發送 CORS 預檢請求（Apps Script 不處理 OPTIONS）
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+  return res.json();
+}
+
+// ---- Roster (name list) ----
+const DEFAULT_ROSTER = [{ id: "70445", name: "陳姵君" }];
+
+function renderRosterUI() {
+  const sel = document.getElementById("login-select");
+  sel.innerHTML = '<option value="">— 從名單選擇 —</option>' +
+    roster.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '（' + escapeHtml(p.id) + '）</option>').join("");
+
+  const list = document.getElementById("roster-list");
+  if (roster.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:#9A968A;">尚未建立名單</div>';
+  } else {
+    list.innerHTML = roster.map(p =>
+      '<div class="roster-chip">' + escapeHtml(p.name) + '（' + escapeHtml(p.id) + '）' +
+      '<span class="rm" onclick="removeRoster(\'' + p.id + '\')">×</span></div>'
+    ).join("");
+  }
+}
+
+async function removeRoster(id) {
+  await apiPost({ action: "removeRoster", id: id });
+  await loadAll();
+  renderRosterUI();
+}
+
+function updateIdentityChip() {
+  const chip = document.getElementById("identity-chip");
+  chip.textContent = currentUser ? (currentUser.name + "（" + currentUser.id + "）") : "未登入";
+}
+
+function loginAs(person) {
+  currentUser = person;
+  updateIdentityChip();
+  try {
+    localStorage.setItem("vtt-my-identity", JSON.stringify(person));
+  } catch (e) {}
+  document.getElementById("login-gate").classList.remove("show");
+  render();
+}
+
+function tryAutoLogin() {
+  try {
+    const raw = localStorage.getItem("vtt-my-identity");
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (roster.find(p => p.id === saved.id)) {
+        currentUser = saved;
+        updateIdentityChip();
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+function showLoginGate() {
+  renderRosterUI();
+  document.getElementById("login-gate").classList.add("show");
+}
+
+// ---- Data load/save ----
+async function loadAll() {
+  try {
+    const data = await apiGet();
+    if (data.ok) {
+      items = data.cases || [];
+      if (data.roster && data.roster.length) {
+        roster = data.roster;
+      } else {
+        // 名單是空的：把預設名單實際寫回試算表，之後就會持續存在
+        roster = [...DEFAULT_ROSTER];
+        for (const p of DEFAULT_ROSTER) {
+          await apiPost({ action: "addRoster", person: p });
+        }
+      }
+      document.getElementById("last-sync").textContent = "已同步 · " + new Date().toLocaleTimeString("zh-TW", {hour:"2-digit", minute:"2-digit"});
+    }
+  } catch (e) {
+    document.getElementById("last-sync").textContent = "同步失敗，請確認網路或稍後重新整理";
+    if (roster.length === 0) roster = [...DEFAULT_ROSTER];
+  }
+  render();
+}
+
+function isOverdue(item) {
+  if (item.progress === "已結案" || !item.due) return false;
+  return item.due < todayStr();
+}
+
+function render() {
+  const stationFilter = document.getElementById("filter-station").value;
+  const regionFilter = document.getElementById("filter-region").value;
+  const search = document.getElementById("filter-search").value.trim().toLowerCase();
+
+  let filtered = items.filter(it => {
+    if (currentStatusFilter !== "全部" && it.progress !== currentStatusFilter) return false;
+    if (stationFilter && it.station !== stationFilter) return false;
+    if (regionFilter && (it.region || regionOf(it.station)) !== regionFilter) return false;
+    if (search) {
+      const hay = ((it.car||"") + (it.event||"") + (it.handler||"") + (it.method||"")).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    const rank = { "未結案": 0, "處理中": 1, "已結案": 2 };
+    if (rank[a.progress] !== rank[b.progress]) return rank[a.progress] - rank[b.progress];
+    return (a.due || "9999").localeCompare(b.due || "9999");
+  });
+
+  document.getElementById("stat-open").textContent = items.filter(i => i.progress === "未結案").length;
+  document.getElementById("stat-progress").textContent = items.filter(i => i.progress === "處理中").length;
+  document.getElementById("stat-closed").textContent = items.filter(i => i.progress === "已結案").length;
+  document.getElementById("stat-overdue").textContent = items.filter(isOverdue).length;
+
+  const area = document.getElementById("table-area");
+  if (filtered.length === 0) {
+    area.innerHTML = '<div class="empty">目前沒有符合條件的待辦事項，新增一筆或調整篩選條件。</div>';
+    return;
+  }
+
+  let html = '<table><thead><tr>' +
+    '<th></th><th>處理日期</th><th>車號</th><th>區域</th><th>站所</th><th>處理事件</th>' +
+    '<th>處理人</th><th>處理方式</th><th>進度</th><th>預計完成日</th><th>登記人</th><th></th>' +
+    '</tr></thead><tbody>';
+
+  filtered.forEach(it => {
+    const overdue = isOverdue(it);
+    html += '<tr>' +
+      '<td><span class="rail ' + it.progress + '"></span></td>' +
+      '<td class="mono">' + escapeHtml(it.date || "") + '</td>' +
+      '<td class="mono">' + escapeHtml(it.car || "") + '</td>' +
+      '<td style="font-size:11px;color:#6B6B63;">' + escapeHtml(it.region || regionOf(it.station) || "") + '</td>' +
+      '<td>' + escapeHtml(it.station || "") + '</td>' +
+      '<td>' + escapeHtml(it.event || "") + '</td>' +
+      '<td>' + escapeHtml(it.handler || "") + '</td>' +
+      '<td>' + escapeHtml(it.method || "") + '</td>' +
+      '<td><span class="badge ' + it.progress + '">' + it.progress + '</span></td>' +
+      '<td class="mono' + (overdue ? ' overdue' : '') + '">' + escapeHtml(it.due || "") + (overdue ? ' 逾期' : '') + '</td>' +
+      '<td style="font-size:11px;color:#9A968A;">' + escapeHtml((it.updatedByName || it.createdByName || "")) + '</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="icon-btn" onclick="openEdit(\'' + it.id + '\')">編輯</button>' +
+        '<button class="icon-btn danger" onclick="askDelete(\'' + it.id + '\')">刪除</button>' +
+      '</div></td>' +
+      '</tr>';
+  });
+
+  html += '</tbody></table>';
+  area.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function clearForm() {
+  document.getElementById("f-date").value = todayStr();
+  document.getElementById("f-car").value = "";
+  document.getElementById("f-station").value = "";
+  document.getElementById("f-region").value = "";
+  document.getElementById("f-handler").value = "";
+  document.getElementById("f-event").value = "";
+  document.getElementById("f-method").value = "";
+  document.getElementById("f-progress").value = "未結案";
+  document.getElementById("f-due").value = "";
+  document.getElementById("form-error").textContent = "";
+  editingId = null;
+  document.getElementById("btn-submit").textContent = "新增";
+}
+
+function openEdit(id) {
+  const it = items.find(i => i.id === id);
+  if (!it) return;
+  document.getElementById("f-date").value = it.date || "";
+  document.getElementById("f-car").value = it.car || "";
+  document.getElementById("f-station").value = it.station || "";
+  document.getElementById("f-region").value = it.region || regionOf(it.station || "");
+  document.getElementById("f-handler").value = it.handler || "";
+  document.getElementById("f-event").value = it.event || "";
+  document.getElementById("f-method").value = it.method || "";
+  document.getElementById("f-progress").value = it.progress || "未結案";
+  document.getElementById("f-due").value = it.due || "";
+  editingId = id;
+  document.getElementById("btn-submit").textContent = "更新這筆";
+  document.getElementById("add-form").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function askDelete(id) {
+  deletingId = id;
+  document.getElementById("confirm-backdrop").classList.add("show");
+}
+
+async function submitForm() {
+  const car = document.getElementById("f-car").value.trim();
+  const event = document.getElementById("f-event").value.trim();
+  const errEl = document.getElementById("form-error");
+
+  if (!car || !event) {
+    errEl.textContent = "車號和處理事件為必填";
+    return;
+  }
+  errEl.textContent = "";
+
+  const btn = document.getElementById("btn-submit");
+  btn.disabled = true;
+
+  const data = {
+    date: document.getElementById("f-date").value || todayStr(),
+    car: car,
+    station: document.getElementById("f-station").value,
+    region: regionOf(document.getElementById("f-station").value),
+    handler: document.getElementById("f-handler").value.trim(),
+    event: event,
+    method: document.getElementById("f-method").value.trim(),
+    progress: document.getElementById("f-progress").value,
+    due: document.getElementById("f-due").value,
+  };
+
+  const stampName = currentUser ? currentUser.name : "";
+
+  try {
+    if (editingId) {
+      const idx = items.findIndex(i => i.id === editingId);
+      const updated = idx > -1 ? { ...items[idx], ...data, updatedByName: stampName, updatedAt: Date.now() } : { id: editingId, ...data, updatedByName: stampName, updatedAt: Date.now() };
+      await apiPost({ action: "updateCase", item: updated });
+    } else {
+      const newItem = { id: genId(), ...data, created: Date.now(), createdByName: stampName };
+      await apiPost({ action: "addCase", item: newItem });
+    }
+    await loadAll();
+    clearForm();
+  } catch (e) {
+    errEl.textContent = "送出失敗，請確認網路連線後再試一次";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("f-station").addEventListener("change", () => {
+  document.getElementById("f-region").value = regionOf(document.getElementById("f-station").value);
+});
+
+document.getElementById("btn-submit").addEventListener("click", submitForm);
+document.getElementById("btn-clear").addEventListener("click", clearForm);
+
+document.getElementById("confirm-cancel").addEventListener("click", () => {
+  deletingId = null;
+  document.getElementById("confirm-backdrop").classList.remove("show");
+});
+document.getElementById("confirm-ok").addEventListener("click", async () => {
+  if (deletingId) {
+    await apiPost({ action: "deleteCase", id: deletingId });
+    await loadAll();
+  }
+  deletingId = null;
+  document.getElementById("confirm-backdrop").classList.remove("show");
+});
+
+document.querySelectorAll(".status-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".status-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    currentStatusFilter = tab.dataset.v;
+    render();
+  });
+});
+document.getElementById("filter-station").addEventListener("change", render);
+document.getElementById("filter-region").addEventListener("change", render);
+document.getElementById("filter-search").addEventListener("input", render);
+
+document.getElementById("btn-switch-identity").addEventListener("click", showLoginGate);
+document.getElementById("btn-toggle-roster").addEventListener("click", () => {
+  document.getElementById("roster-panel").classList.toggle("show");
+  renderRosterUI();
+});
+
+document.getElementById("btn-roster-add").addEventListener("click", async () => {
+  const id = document.getElementById("roster-id").value.trim();
+  const name = document.getElementById("roster-name").value.trim();
+  if (!id || !name) return;
+  if (roster.find(p => p.id === id)) { renderRosterUI(); return; }
+  await apiPost({ action: "addRoster", person: { id, name } });
+  await loadAll();
+  document.getElementById("roster-id").value = "";
+  document.getElementById("roster-name").value = "";
+  renderRosterUI();
+});
+
+document.getElementById("btn-login-confirm").addEventListener("click", () => {
+  const id = document.getElementById("login-select").value;
+  const errEl = document.getElementById("login-error");
+  if (!id) { errEl.textContent = "請先選擇一個身分"; return; }
+  errEl.textContent = "";
+  const person = roster.find(p => p.id === id);
+  loginAs(person);
+});
+
+document.getElementById("btn-login-addself").addEventListener("click", async () => {
+  const id = document.getElementById("login-new-id").value.trim();
+  const name = document.getElementById("login-new-name").value.trim();
+  const errEl = document.getElementById("login-error");
+  if (!id || !name) { errEl.textContent = "請輸入工號和姓名"; return; }
+  errEl.textContent = "";
+  if (!roster.find(p => p.id === id)) {
+    await apiPost({ action: "addRoster", person: { id, name } });
+  }
+  loginAs({ id, name });
+});
+
+async function init() {
+  clearForm();
+  if (!checkSetup()) {
+    document.getElementById("table-area").innerHTML = '<div class="empty">請先完成上方的設定步驟</div>';
+    return;
+  }
+  await loadAll();
+  const auto = tryAutoLogin();
+  if (!auto) showLoginGate();
+  setInterval(loadAll, 15000);
+}
+init();
+</script>
+</body>
+</html>
