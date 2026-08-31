@@ -275,7 +275,12 @@
 <div class="modal-backdrop" id="confirm-backdrop">
   <div class="modal">
     <h3>刪除這筆待辦事項？</h3>
-    <p>刪除後無法復原，所有部門同仁都看不到這筆紀錄。</p>
+    <p>刪除後同仁看不到這筆紀錄，但資料會保留備查，並記錄是誰、什麼時候、為什麼刪除。</p>
+    <div class="field" style="margin-top:8px;">
+      <label>刪除原因 *</label>
+      <input type="text" id="delete-reason" placeholder="例：重複登記、登記錯誤等">
+    </div>
+    <div id="delete-error" style="color:#C1443C; font-size:12px; min-height:16px; margin-top:4px;"></div>
     <div class="modal-actions">
       <button class="btn-ghost" id="confirm-cancel">取消</button>
       <button class="btn-primary" id="confirm-ok" style="background:#C1443C;">刪除</button>
@@ -569,6 +574,7 @@ function render() {
   const search = document.getElementById("filter-search").value.trim().toLowerCase();
 
   let filtered = items.filter(it => {
+    if (it.deleted === "Y") return false; // 已軟刪除的不顯示在清單上
     if (currentStatusFilter !== "全部" && it.progress !== currentStatusFilter) return false;
     if (stationFilter && it.station !== stationFilter) return false;
     if (regionFilter && (it.region || regionOf(it.station)) !== regionFilter) return false;
@@ -583,10 +589,11 @@ function render() {
     return (a.due || "9999").localeCompare(b.due || "9999");
   });
 
-  document.getElementById("stat-open").textContent = items.filter(i => i.progress === "未結案").length;
-  document.getElementById("stat-progress").textContent = items.filter(i => i.progress === "處理中").length;
-  document.getElementById("stat-closed").textContent = items.filter(i => i.progress === "已結案").length;
-  document.getElementById("stat-overdue").textContent = items.filter(isOverdue).length;
+  const activeItems = items.filter(i => i.deleted !== "Y");
+  document.getElementById("stat-open").textContent = activeItems.filter(i => i.progress === "未結案").length;
+  document.getElementById("stat-progress").textContent = activeItems.filter(i => i.progress === "處理中").length;
+  document.getElementById("stat-closed").textContent = activeItems.filter(i => i.progress === "已結案").length;
+  document.getElementById("stat-overdue").textContent = activeItems.filter(isOverdue).length;
 
   const area = document.getElementById("table-area");
   if (filtered.length === 0) {
@@ -623,7 +630,7 @@ function render() {
       '<td style="font-size:12px;">' + inspectionBadge(it.car) + '</td>' +
       '<td><div class="row-actions">' +
         (isClosed ? '' : '<button class="icon-btn" onclick="openEdit(\'' + it.id + '\')">編輯</button>') +
-        '<button class="icon-btn danger" onclick="askDelete(\'' + it.id + '\')">刪除</button>' +
+        (isClosed ? '' : '<button class="icon-btn danger" onclick="askDelete(\'' + it.id + '\')">刪除</button>') +
       '</div></td>' +
       '</tr>';
   });
@@ -780,14 +787,34 @@ document.getElementById("btn-clear").addEventListener("click", clearForm);
 
 document.getElementById("confirm-cancel").addEventListener("click", () => {
   deletingId = null;
+  document.getElementById("delete-reason").value = "";
+  document.getElementById("delete-error").textContent = "";
   document.getElementById("confirm-backdrop").classList.remove("show");
 });
 document.getElementById("confirm-ok").addEventListener("click", async () => {
-  if (deletingId) {
-    await apiPost({ action: "deleteCase", id: deletingId });
+  if (!deletingId) return;
+  const reason = document.getElementById("delete-reason").value.trim();
+  const errEl = document.getElementById("delete-error");
+  if (!reason) {
+    errEl.textContent = "請填寫刪除原因";
+    return;
+  }
+  errEl.textContent = "";
+  const it = items.find(i => i.id === deletingId);
+  if (it) {
+    // 軟刪除：不真的從試算表移除資料，只標記刪除狀態、記錄是誰、何時、為什麼刪除，方便日後備查
+    const updated = {
+      ...it,
+      deleted: "Y",
+      deletedByName: currentUser ? currentUser.name : "",
+      deletedAt: Date.now(),
+      deleteReason: reason
+    };
+    await apiPost({ action: "updateCase", item: updated });
     await loadAll();
   }
   deletingId = null;
+  document.getElementById("delete-reason").value = "";
   document.getElementById("confirm-backdrop").classList.remove("show");
 });
 
