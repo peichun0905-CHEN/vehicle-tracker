@@ -80,12 +80,6 @@
   .badge.處理中 { background: #FAEEDA; color: #633806; }
   .badge.已結案 { background: #EAF3DE; color: #27500A; }
 
-  .quick-progress {
-    font-family: inherit; font-size: 12px; font-weight: 600; padding: 5px 8px;
-    border-radius: 6px; border: 1px solid #D8D3C6; background: #FCFBF8; color: #1C2B39; cursor: pointer;
-  }
-  .quick-progress:focus { outline: none; border-color: #2C4A63; }
-
   .overdue { color: #C1443C; font-weight: 700; }
   .row-actions { display: flex; gap: 6px; }
   .icon-btn { background: transparent; border: 1px solid #D8D3C6; border-radius: 6px; padding: 5px 8px; font-size: 12px; color: #6B6B63; cursor: pointer; }
@@ -172,7 +166,7 @@
   </div>
 
   <div class="panel">
-    <h2>新增待辦事項</h2>
+    <h2>新增／修正待辦事項</h2>
     <div class="form-grid" id="add-form">
       <div class="field">
         <label>處理日期</label>
@@ -527,23 +521,12 @@ function isOverdue(item) {
   return item.due < todayStr();
 }
 
-// 清單上直接切換進度用，不用開編輯表單。選成「已結案」時自動記錄當天為已結案日期。
-async function quickUpdateProgress(id, newProgress) {
-  const it = items.find(i => i.id === id);
-  if (!it || it.progress === "已結案") return; // 已結案的事項不再允許變更
-  const updated = {
-    ...it,
-    progress: newProgress,
-    closedDate: newProgress === "已結案" ? todayStr() : (it.closedDate || ""),
-    updatedByName: currentUser ? currentUser.name : (it.updatedByName || it.createdByName || ""),
-    updatedAt: Date.now()
-  };
-  try {
-    await apiPost({ action: "updateCase", item: updated });
-    await loadAll();
-  } catch (e) {
-    alert("更新失敗，請確認網路連線後再試一次");
-  }
+// 把 updatedAt 的時間戳記格式化成簡短日期，用來在清單上顯示「最後修改是哪一天」
+function formatUpdatedAt_(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
+  return (d.getMonth() + 1) + "/" + d.getDate() + " 更新";
 }
 
 function render() {
@@ -587,16 +570,11 @@ function render() {
   filtered.forEach(it => {
     const overdue = isOverdue(it);
     const isClosed = it.progress === "已結案";
-    const progressCell = isClosed
-      ? '<span class="badge 已結案">已結案</span>'
-      : '<select class="quick-progress" onchange="quickUpdateProgress(\'' + it.id + '\', this.value)" onclick="event.stopPropagation()">' +
-          ['未結案', '處理中', '已結案'].map(p =>
-            '<option value="' + p + '"' + (p === it.progress ? ' selected' : '') + '>' + p + '</option>'
-          ).join('') +
-        '</select>';
+    const progressCell = '<span class="badge ' + it.progress + '">' + it.progress + '</span>';
     const dueCell = isClosed
       ? ('已結案：' + escapeHtml(it.closedDate || ''))
       : (escapeHtml(it.due || "") + (overdue ? ' 逾期' : ''));
+    const lastUpdateText = formatUpdatedAt_(it.updatedAt);
     html += '<tr>' +
       '<td><span class="rail ' + it.progress + '"></span></td>' +
       '<td class="mono">' + escapeHtml(it.date || "") + '</td>' +
@@ -608,7 +586,8 @@ function render() {
       '<td>' + escapeHtml(it.method || "") + '</td>' +
       '<td>' + progressCell + '</td>' +
       '<td class="mono' + (overdue ? ' overdue' : '') + '">' + dueCell + '</td>' +
-      '<td style="font-size:11px;color:#9A968A;">' + escapeHtml((it.updatedByName || it.createdByName || "")) + '</td>' +
+      '<td style="font-size:11px;color:#9A968A;">' + escapeHtml((it.updatedByName || it.createdByName || "")) +
+        (lastUpdateText ? ('<div style="color:#C8C4B8;">' + escapeHtml(lastUpdateText) + '</div>') : '') + '</td>' +
       '<td style="font-size:12px;">' + inspectionBadge(it.car) + '</td>' +
       '<td><div class="row-actions">' +
         (isClosed ? '' : '<button class="icon-btn" onclick="openEdit(\'' + it.id + '\')">編輯</button>') +
@@ -711,7 +690,7 @@ async function submitForm() {
       const updated = idx > -1 ? { ...items[idx], ...data, updatedByName: stampName, updatedAt: Date.now() } : { id: editingId, ...data, updatedByName: stampName, updatedAt: Date.now() };
       await apiPost({ action: "updateCase", item: updated });
     } else {
-      const newItem = { id: genId(), ...data, created: Date.now(), createdByName: stampName };
+      const newItem = { id: genId(), ...data, created: Date.now(), createdByName: stampName, updatedAt: Date.now() };
       await apiPost({ action: "addCase", item: newItem });
     }
     await loadAll();
