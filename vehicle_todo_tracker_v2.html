@@ -80,6 +80,12 @@
   .badge.處理中 { background: #FAEEDA; color: #633806; }
   .badge.已結案 { background: #EAF3DE; color: #27500A; }
 
+  .quick-progress {
+    font-family: inherit; font-size: 12px; font-weight: 600; padding: 5px 8px;
+    border-radius: 6px; border: 1px solid #D8D3C6; background: #FCFBF8; color: #1C2B39; cursor: pointer;
+  }
+  .quick-progress:focus { outline: none; border-color: #2C4A63; }
+
   .overdue { color: #C1443C; font-weight: 700; }
   .row-actions { display: flex; gap: 6px; }
   .icon-btn { background: transparent; border: 1px solid #D8D3C6; border-radius: 6px; padding: 5px 8px; font-size: 12px; color: #6B6B63; cursor: pointer; }
@@ -136,7 +142,7 @@
 
   <div class="topbar">
     <div>
-      <h1> 車輛管理部 · 待辦事項追蹤表</h1>
+      <h1>車輛管理部 · 待辦事項追蹤表</h1>
       <div class="sub" id="last-sync">同步中...</div>
     </div>
     <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
@@ -173,8 +179,8 @@
         <input type="date" id="f-date">
       </div>
       <div class="field">
-        <label>車號</label>
-        <input type="text" id="f-car" placeholder="例：KLF0127">
+        <label>車號（無特定車輛可留空）</label>
+        <input type="text" id="f-car" placeholder="例：KLF0127；輪胎/油料合約等可留空">
       </div>
       <div class="field">
         <label>站所</label>
@@ -199,6 +205,10 @@
       <div class="field" style="grid-column: span 2;">
         <label>處理方式</label>
         <input type="text" id="f-method" placeholder="例：已通知站所複查、送廠檢修中">
+      </div>
+      <div class="field" style="grid-column: span 2;">
+        <label>車輛定檢狀態</label>
+        <div id="f-inspection-status" style="font-size:12px; padding:8px 10px; background:#F0EEE6; border-radius:6px; min-height:34px; display:flex; align-items:center; color:#9A968A;">請先輸入車號</div>
       </div>
       <div class="field">
         <label>進度</label>
@@ -280,7 +290,7 @@
    請把下面這行換成你自己部署 Google Apps Script 後拿到的網址
    例如：https://script.google.com/macros/s/AKfycb.../exec
    ============================================================ */
-const API_URL = "https://script.google.com/macros/s/AKfycbwg282SL60pRiLgzjSOMCEpyn1i3lwr5I9LsoCGfwu9UE57bAimFXPFeSo4WPZL87Oc1Q/exec";
+const API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 const STATION_REGION = {
   "台北": "北一區", "蘆洲": "北一區", "八里": "北一區", "北投": "北一區", "新莊": "北一區", "三重": "北一區",
@@ -292,8 +302,93 @@ const STATION_REGION = {
 };
 function regionOf(station) { return STATION_REGION[station] || ""; }
 
+// ---- 車輛主檔 / 定檢查詢 ----
+const INSPECTION_WARN_DAYS = 60; // 不到這個天數就標紅字提醒
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(todayStr() + "T00:00:00");
+  const target = new Date(dateStr + "T00:00:00");
+  if (isNaN(target.getTime())) return null;
+  return Math.round((target - today) / 86400000);
+}
+
+function lookupVehicle(carInput) {
+  const key = String(carInput || "").trim();
+  if (!key || !vehicles) return null;
+  return vehicles[key] || null;
+}
+
+// 主檔的站所欄位常是「站碼 站名」格式（例如「1501 土城」），取最後一段當站名
+function extractStationName_(raw) {
+  const parts = String(raw || "").trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1] : parts[0];
+}
+
+// 新增待辦表單裡的完整狀態說明（含公司車籍驗證、站所、最後定檢日、剩餘天數）
+function inspectionStatusHtml(carInput) {
+  const v = lookupVehicle(carInput);
+  if (!v) {
+    return '<span style="color:#C1443C;font-weight:700;">⚠ 查無此車籍資料</span>　' +
+           '<span style="color:#9A968A;">（不是本公司車輛，或車號/車代號輸入有誤）</span>';
+  }
+  const parts = ['<span style="color:#3F7D58;font-weight:700;">✓ 本公司車輛</span>'];
+  if (v.station) parts.push('目前站所：' + escapeHtml(v.station));
+  if (v.lastInspectionDate) {
+    const d = daysUntil(v.lastInspectionDate);
+    let dateText = '最後定檢日：' + escapeHtml(v.lastInspectionDate);
+    if (d !== null) {
+      const isSoon = d < INSPECTION_WARN_DAYS;
+      const label = d < 0 ? ('已逾期 ' + Math.abs(d) + ' 天') : ('剩 ' + d + ' 天');
+      dateText += isSoon
+        ? ' <span style="color:#C1443C;font-weight:700;">（' + label + '）</span>'
+        : ' （' + label + '）';
+    }
+    parts.push(dateText);
+  } else {
+    parts.push('<span style="color:#9A968A;">尚無定檢紀錄</span>');
+  }
+  return parts.join('　');
+}
+
+// 清單表格用的精簡版badge：車號留空不顯示；有填車號但查無車籍就標示警示；查得到就顯示定檢剩餘天數
+function inspectionBadge(carInput) {
+  const car = String(carInput || "").trim();
+  if (!car) return '<span style="color:#C8C4B8;">—</span>';
+  const v = lookupVehicle(car);
+  if (!v) return '<span style="color:#D98F32;font-weight:700;">⚠查無車籍</span>';
+  if (!v.lastInspectionDate) return '<span style="color:#9A968A;">尚無定檢</span>';
+  const d = daysUntil(v.lastInspectionDate);
+  if (d === null) return '<span style="color:#9A968A;">尚無定檢</span>';
+  if (d < 0) return '<span style="color:#C1443C;font-weight:700;">已逾期' + Math.abs(d) + '天</span>';
+  if (d < INSPECTION_WARN_DAYS) return '<span style="color:#C1443C;font-weight:700;">剩' + d + '天</span>';
+  return '<span style="color:#3F7D58;">剩' + d + '天</span>';
+}
+
+function updateInspectionStatusUI() {
+  const car = document.getElementById("f-car").value.trim();
+  const el = document.getElementById("f-inspection-status");
+  if (!car) {
+    el.innerHTML = "請先輸入車號";
+    el.style.color = "#9A968A";
+    return;
+  }
+  el.style.color = "";
+  el.innerHTML = inspectionStatusHtml(car);
+  const v = lookupVehicle(car);
+  // 找得到站所資料時，自動帶入站所欄位（同事不用手動選）
+  if (v && v.station) {
+    const stationName = extractStationName_(v.station);
+    if (stationName && STATION_REGION[stationName]) {
+      document.getElementById("f-station").value = stationName;
+      document.getElementById("f-region").value = regionOf(stationName);
+    }
+  }
+}
+
 let items = [];
 let roster = [];
+let vehicles = {}; // 車輛主檔+定檢對照表，key 為車牌號碼或車代號
 let currentUser = null;
 let editingId = null;
 let deletingId = null;
@@ -398,6 +493,7 @@ async function loadAll() {
     const data = await apiGet();
     if (data.ok) {
       items = data.cases || [];
+      vehicles = data.vehicles || {};
       if (data.roster && data.roster.length) {
         roster = data.roster;
       } else {
@@ -419,6 +515,25 @@ async function loadAll() {
 function isOverdue(item) {
   if (item.progress === "已結案" || !item.due) return false;
   return item.due < todayStr();
+}
+
+// 清單上直接切換進度用，不用開編輯表單。選成「已結案」時自動記錄當天為已結案日期。
+async function quickUpdateProgress(id, newProgress) {
+  const it = items.find(i => i.id === id);
+  if (!it || it.progress === "已結案") return; // 已結案的事項不再允許變更
+  const updated = {
+    ...it,
+    progress: newProgress,
+    closedDate: newProgress === "已結案" ? todayStr() : (it.closedDate || ""),
+    updatedByName: currentUser ? currentUser.name : (it.updatedByName || it.createdByName || ""),
+    updatedAt: Date.now()
+  };
+  try {
+    await apiPost({ action: "updateCase", item: updated });
+    await loadAll();
+  } catch (e) {
+    alert("更新失敗，請確認網路連線後再試一次");
+  }
 }
 
 function render() {
@@ -456,11 +571,22 @@ function render() {
 
   let html = '<table><thead><tr>' +
     '<th></th><th>處理日期</th><th>車號</th><th>區域</th><th>站所</th><th>處理事件</th>' +
-    '<th>處理人</th><th>處理方式</th><th>進度</th><th>預計完成日</th><th>登記人</th><th></th>' +
+    '<th>處理人</th><th>處理方式</th><th>進度</th><th>預計完成日</th><th>登記人</th><th>定檢提醒</th><th></th>' +
     '</tr></thead><tbody>';
 
   filtered.forEach(it => {
     const overdue = isOverdue(it);
+    const isClosed = it.progress === "已結案";
+    const progressCell = isClosed
+      ? '<span class="badge 已結案">已結案</span>'
+      : '<select class="quick-progress" onchange="quickUpdateProgress(\'' + it.id + '\', this.value)" onclick="event.stopPropagation()">' +
+          ['未結案', '處理中', '已結案'].map(p =>
+            '<option value="' + p + '"' + (p === it.progress ? ' selected' : '') + '>' + p + '</option>'
+          ).join('') +
+        '</select>';
+    const dueCell = isClosed
+      ? ('已結案：' + escapeHtml(it.closedDate || ''))
+      : (escapeHtml(it.due || "") + (overdue ? ' 逾期' : ''));
     html += '<tr>' +
       '<td><span class="rail ' + it.progress + '"></span></td>' +
       '<td class="mono">' + escapeHtml(it.date || "") + '</td>' +
@@ -470,11 +596,12 @@ function render() {
       '<td>' + escapeHtml(it.event || "") + '</td>' +
       '<td>' + escapeHtml(it.handler || "") + '</td>' +
       '<td>' + escapeHtml(it.method || "") + '</td>' +
-      '<td><span class="badge ' + it.progress + '">' + it.progress + '</span></td>' +
-      '<td class="mono' + (overdue ? ' overdue' : '') + '">' + escapeHtml(it.due || "") + (overdue ? ' 逾期' : '') + '</td>' +
+      '<td>' + progressCell + '</td>' +
+      '<td class="mono' + (overdue ? ' overdue' : '') + '">' + dueCell + '</td>' +
       '<td style="font-size:11px;color:#9A968A;">' + escapeHtml((it.updatedByName || it.createdByName || "")) + '</td>' +
+      '<td style="font-size:12px;">' + inspectionBadge(it.car) + '</td>' +
       '<td><div class="row-actions">' +
-        '<button class="icon-btn" onclick="openEdit(\'' + it.id + '\')">編輯</button>' +
+        (isClosed ? '' : '<button class="icon-btn" onclick="openEdit(\'' + it.id + '\')">編輯</button>') +
         '<button class="icon-btn danger" onclick="askDelete(\'' + it.id + '\')">刪除</button>' +
       '</div></td>' +
       '</tr>';
@@ -501,11 +628,14 @@ function clearForm() {
   document.getElementById("form-error").textContent = "";
   editingId = null;
   document.getElementById("btn-submit").textContent = "新增";
+  const statusEl = document.getElementById("f-inspection-status");
+  if (statusEl) { statusEl.innerHTML = "請先輸入車號"; statusEl.style.color = "#9A968A"; }
 }
 
 function openEdit(id) {
   const it = items.find(i => i.id === id);
   if (!it) return;
+  if (it.progress === "已結案") return; // 已結案的事項不開放編輯
   document.getElementById("f-date").value = it.date || "";
   document.getElementById("f-car").value = it.car || "";
   document.getElementById("f-station").value = it.station || "";
@@ -517,6 +647,7 @@ function openEdit(id) {
   document.getElementById("f-due").value = it.due || "";
   editingId = id;
   document.getElementById("btn-submit").textContent = "更新這筆";
+  updateInspectionStatusUI();
   document.getElementById("add-form").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
@@ -530,14 +661,17 @@ async function submitForm() {
   const event = document.getElementById("f-event").value.trim();
   const errEl = document.getElementById("form-error");
 
-  if (!car || !event) {
-    errEl.textContent = "車號和處理事件為必填";
+  if (!event) {
+    errEl.textContent = "處理事件為必填";
     return;
   }
   errEl.textContent = "";
 
   const btn = document.getElementById("btn-submit");
   btn.disabled = true;
+
+  const progressVal = document.getElementById("f-progress").value;
+  const existing = editingId ? items.find(i => i.id === editingId) : null;
 
   const data = {
     date: document.getElementById("f-date").value || todayStr(),
@@ -547,8 +681,10 @@ async function submitForm() {
     handler: document.getElementById("f-handler").value.trim(),
     event: event,
     method: document.getElementById("f-method").value.trim(),
-    progress: document.getElementById("f-progress").value,
+    progress: progressVal,
     due: document.getElementById("f-due").value,
+    // 選成已結案時自動記錄當天日期；若原本就已結案就保留原本的已結案日期
+    closedDate: progressVal === "已結案" ? ((existing && existing.closedDate) || todayStr()) : ""
   };
 
   const stampName = currentUser ? currentUser.name : "";
@@ -574,6 +710,9 @@ async function submitForm() {
 document.getElementById("f-station").addEventListener("change", () => {
   document.getElementById("f-region").value = regionOf(document.getElementById("f-station").value);
 });
+
+document.getElementById("f-car").addEventListener("input", updateInspectionStatusUI);
+document.getElementById("f-car").addEventListener("blur", updateInspectionStatusUI);
 
 document.getElementById("btn-submit").addEventListener("click", submitForm);
 document.getElementById("btn-clear").addEventListener("click", clearForm);
