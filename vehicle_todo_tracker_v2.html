@@ -195,11 +195,11 @@
         <input type="text" id="f-region" placeholder="選站所後自動帶出" readonly style="background:#F0EEE6; color:#6B6B63;">
       </div>
       <div class="field">
-        <label>處理人</label>
+        <label>處理人 *</label>
         <input type="text" id="f-handler" placeholder="負責人姓名">
       </div>
       <div class="field" style="grid-column: span 2;">
-        <label>處理事件</label>
+        <label>處理事件 *</label>
         <input type="text" id="f-event" placeholder="例：里程異常回覆、車輛維修申請">
       </div>
       <div class="field" style="grid-column: span 2;">
@@ -463,6 +463,11 @@ function loginAs(person) {
   try {
     localStorage.setItem("vtt-my-identity", JSON.stringify(person));
   } catch (e) {}
+  // 登入時若「處理人」欄位還是空的（尚未輸入其他人），自動帶入登入者姓名
+  const handlerEl = document.getElementById("f-handler");
+  if (handlerEl && !handlerEl.value.trim()) {
+    handlerEl.value = person.name;
+  }
   document.getElementById("login-gate").classList.remove("show");
   render();
 }
@@ -475,6 +480,10 @@ function tryAutoLogin() {
       if (roster.find(p => p.id === saved.id)) {
         currentUser = saved;
         updateIdentityChip();
+        const handlerEl = document.getElementById("f-handler");
+        if (handlerEl && !handlerEl.value.trim()) {
+          handlerEl.value = saved.name;
+        }
         return true;
       }
     }
@@ -620,7 +629,8 @@ function clearForm() {
   document.getElementById("f-car").value = "";
   document.getElementById("f-station").value = "";
   document.getElementById("f-region").value = "";
-  document.getElementById("f-handler").value = "";
+  // 處理人預設帶入目前登入者姓名，仍可手動改成別人
+  document.getElementById("f-handler").value = currentUser ? currentUser.name : "";
   document.getElementById("f-event").value = "";
   document.getElementById("f-method").value = "";
   document.getElementById("f-progress").value = "未結案";
@@ -659,10 +669,15 @@ function askDelete(id) {
 async function submitForm() {
   const car = document.getElementById("f-car").value.trim();
   const event = document.getElementById("f-event").value.trim();
+  const handler = document.getElementById("f-handler").value.trim();
   const errEl = document.getElementById("form-error");
 
   if (!event) {
     errEl.textContent = "處理事件為必填";
+    return;
+  }
+  if (!handler) {
+    errEl.textContent = "處理人為必填，請確認是誰負責處理這件事";
     return;
   }
   errEl.textContent = "";
@@ -678,7 +693,7 @@ async function submitForm() {
     car: car,
     station: document.getElementById("f-station").value,
     region: regionOf(document.getElementById("f-station").value),
-    handler: document.getElementById("f-handler").value.trim(),
+    handler: handler,
     event: event,
     method: document.getElementById("f-method").value.trim(),
     progress: progressVal,
