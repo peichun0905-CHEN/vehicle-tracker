@@ -464,9 +464,9 @@ function loginAs(person) {
   try {
     localStorage.setItem("vtt-my-identity", JSON.stringify(person));
   } catch (e) {}
-  // 登入時若「處理人」欄位還是空的（尚未輸入其他人），自動帶入登入者姓名
+  // 切換身分後，處理人欄位直接更新成新身分的姓名（仍可手動改成別人）
   const handlerEl = document.getElementById("f-handler");
-  if (handlerEl && !handlerEl.value.trim()) {
+  if (handlerEl) {
     handlerEl.value = person.name;
   }
   document.getElementById("login-gate").classList.remove("show");
