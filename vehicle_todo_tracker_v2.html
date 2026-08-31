@@ -214,7 +214,11 @@
       </div>
       <div class="field">
         <label>預計完成日 *</label>
-        <input type="text" id="f-due" placeholder="例：2026-10-15" inputmode="numeric">
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="f-due" placeholder="例：2026-10-15 或 20261015" inputmode="numeric" style="flex:1;">
+          <button type="button" id="btn-due-picker" class="btn-ghost" style="padding:8px 10px; white-space:nowrap;" title="從日曆選擇日期">📅</button>
+        </div>
+        <input type="date" id="f-due-native" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;" tabindex="-1">
       </div>
       <div class="form-actions">
         <span id="form-error" style="font-size:12px;color:#C1443C;align-self:center;"></span>
@@ -535,10 +539,21 @@ function formatUpdatedAt_(ts) {
   return (d.getMonth() + 1) + "/" + d.getDate() + " 更新";
 }
 
-// 把手動輸入的日期文字（接受 2026-10-15 或 2026/10/15 等寫法）正規化成 yyyy-MM-dd。
+// 把手動輸入的日期文字正規化成 yyyy-MM-dd。
+// 接受 2026-10-15、2026/10/15，也接受純數字 20261015（YYYYMMDD）。
 // 格式不對或日期不合理就回傳 null。
 function normalizeDateInput_(raw) {
   const cleaned = String(raw || "").trim().replace(/\//g, "-");
+
+  // 純數字 8 碼：YYYYMMDD
+  if (/^\d{8}$/.test(cleaned)) {
+    const year = cleaned.slice(0, 4);
+    const month = parseInt(cleaned.slice(4, 6), 10);
+    const day = parseInt(cleaned.slice(6, 8), 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return year + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+  }
+
   const m = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (!m) return null;
   const year = m[1];
@@ -740,6 +755,25 @@ document.getElementById("f-station").addEventListener("change", () => {
 
 document.getElementById("f-car").addEventListener("input", updateInspectionStatusUI);
 document.getElementById("f-car").addEventListener("blur", updateInspectionStatusUI);
+
+// 「預計完成日」旁的日曆按鈕：叫出手機/電腦原生的日期選擇器，選完自動填回文字框
+document.getElementById("btn-due-picker").addEventListener("click", () => {
+  const textInput = document.getElementById("f-due");
+  const nativeInput = document.getElementById("f-due-native");
+  const normalized = normalizeDateInput_(textInput.value);
+  nativeInput.value = normalized || "";
+  if (nativeInput.showPicker) {
+    try { nativeInput.showPicker(); return; } catch (e) {}
+  }
+  nativeInput.focus();
+  nativeInput.click();
+});
+document.getElementById("f-due-native").addEventListener("change", () => {
+  const nativeInput = document.getElementById("f-due-native");
+  if (nativeInput.value) {
+    document.getElementById("f-due").value = nativeInput.value;
+  }
+});
 
 document.getElementById("btn-submit").addEventListener("click", submitForm);
 document.getElementById("btn-clear").addEventListener("click", clearForm);
