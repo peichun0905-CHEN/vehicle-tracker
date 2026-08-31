@@ -458,6 +458,7 @@ function updateIdentityChip() {
 }
 
 function loginAs(person) {
+  if (!person) return; // 防呆：找不到對應的人就不動作，避免整頁卡死
   currentUser = person;
   updateIdentityChip();
   try {
@@ -477,7 +478,7 @@ function tryAutoLogin() {
     const raw = localStorage.getItem("vtt-my-identity");
     if (raw) {
       const saved = JSON.parse(raw);
-      if (roster.find(p => p.id === saved.id)) {
+      if (roster.find(p => String(p.id) === String(saved.id))) {
         currentUser = saved;
         updateIdentityChip();
         const handlerEl = document.getElementById("f-handler");
@@ -767,7 +768,7 @@ document.getElementById("btn-roster-add").addEventListener("click", async () => 
   const id = document.getElementById("roster-id").value.trim();
   const name = document.getElementById("roster-name").value.trim();
   if (!id || !name) return;
-  if (roster.find(p => p.id === id)) { renderRosterUI(); return; }
+  if (roster.find(p => String(p.id) === String(id))) { renderRosterUI(); return; }
   await apiPost({ action: "addRoster", person: { id, name } });
   await loadAll();
   document.getElementById("roster-id").value = "";
@@ -780,7 +781,7 @@ document.getElementById("btn-login-confirm").addEventListener("click", () => {
   const errEl = document.getElementById("login-error");
   if (!id) { errEl.textContent = "請先選擇一個身分"; return; }
   errEl.textContent = "";
-  const person = roster.find(p => p.id === id);
+  const person = roster.find(p => String(p.id) === String(id));
   loginAs(person);
 });
 
@@ -790,7 +791,7 @@ document.getElementById("btn-login-addself").addEventListener("click", async () 
   const errEl = document.getElementById("login-error");
   if (!id || !name) { errEl.textContent = "請輸入工號和姓名"; return; }
   errEl.textContent = "";
-  if (!roster.find(p => p.id === id)) {
+  if (!roster.find(p => String(p.id) === String(id))) {
     await apiPost({ action: "addRoster", person: { id, name } });
   }
   loginAs({ id, name });
