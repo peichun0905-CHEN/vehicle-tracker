@@ -232,9 +232,8 @@
     <h2>清單</h2>
     <div class="filters">
       <div class="status-tabs" id="status-tabs">
-        <div class="status-tab active" data-v="全部">全部</div>
-        <div class="status-tab" data-v="未結案">未處理</div>
-        <div class="status-tab" data-v="處理中">處理中</div>
+        <div class="status-tab active" data-v="未結案">未處理</div>
+        <div class="status-tab active" data-v="處理中">處理中</div>
         <div class="status-tab" data-v="已結案">已結案</div>
       </div>
       <select id="filter-region">
@@ -396,7 +395,7 @@ let vehicles = {}; // 車輛主檔+定檢對照表，key 為車牌號碼或車�
 let currentUser = null;
 let editingId = null;
 let deletingId = null;
-let currentStatusFilter = "全部";
+let currentStatusFilter = new Set(["未結案", "處理中"]); // 預設不顯示已結案，避免清單被舊資料塞滿
 
 function todayStr() {
   const d = new Date();
@@ -575,7 +574,7 @@ function render() {
 
   let filtered = items.filter(it => {
     if (it.deleted === "Y") return false; // 已軟刪除的不顯示在清單上
-    if (currentStatusFilter !== "全部" && it.progress !== currentStatusFilter) return false;
+    if (!currentStatusFilter.has(it.progress)) return false;
     if (stationFilter && it.station !== stationFilter) return false;
     if (regionFilter && (it.region || regionOf(it.station)) !== regionFilter) return false;
     if (search) {
@@ -820,9 +819,17 @@ document.getElementById("confirm-ok").addEventListener("click", async () => {
 
 document.querySelectorAll(".status-tab").forEach(tab => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".status-tab").forEach(t => t.classList.remove("active"));
-    tab.classList.add("active");
-    currentStatusFilter = tab.dataset.v;
+    const v = tab.dataset.v;
+    if (currentStatusFilter.has(v)) {
+      // 已經勾選的再點一次就取消，但至少要保留一個勾選項目，避免清單整個空白看不到任何篩選依據
+      if (currentStatusFilter.size > 1) {
+        currentStatusFilter.delete(v);
+        tab.classList.remove("active");
+      }
+    } else {
+      currentStatusFilter.add(v);
+      tab.classList.add("active");
+    }
     render();
   });
 });
