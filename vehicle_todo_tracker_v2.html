@@ -127,6 +127,23 @@
     .form-grid { grid-template-columns: repeat(2, 1fr); }
     table { display: block; overflow-x: auto; white-space: nowrap; }
   }
+
+  .workload-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .workload-chip { display: flex; align-items: center; gap: 6px; background: #EFF3F6; border: 1px solid #D8D3C6; border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #2C4A63; }
+  .workload-chip:hover { background: #E4EAF0; }
+  .workload-chip .n { font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .workload-chip.active { background: #2C4A63; color: #fff; border-color: #2C4A63; }
+
+  tbody tr.stale { background: #FDF3F1; }
+  tbody tr.stale:hover { background: #FBE9E6; }
+  .stale-badge { display: inline-block; font-size: 10px; font-weight: 700; color: #C1443C; background: #FCEBEB; padding: 1px 6px; border-radius: 10px; white-space: nowrap; }
+
+  .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+  .pagination button { background: #FCFBF8; border: 1px solid #D8D3C6; color: #6B6B63; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-family: inherit; }
+  .pagination button:hover:not(:disabled) { background: #F0EEE6; }
+  .pagination button.active { background: #2C4A63; color: #fff; border-color: #2C4A63; }
+  .pagination button:disabled { color: #C8C4B8; cursor: not-allowed; }
+  .pagination .page-info { font-size: 12px; color: #9A968A; margin: 0 6px; }
 </style>
 </head>
 <body>
@@ -151,6 +168,7 @@
         <div class="stat amber"><div class="num" id="stat-progress">0</div><div class="lbl">處理中</div></div>
         <div class="stat green"><div class="num" id="stat-closed">0</div><div class="lbl">已結案</div></div>
         <div class="stat red"><div class="num" id="stat-overdue">0</div><div class="lbl">逾期</div></div>
+        <div class="stat red"><div class="num" id="stat-stale">0</div><div class="lbl">滯留>7天</div></div>
       </div>
     </div>
   </div>
@@ -247,7 +265,9 @@
         <option>其他</option>
       </select>
       <input type="text" id="filter-search" placeholder="搜尋車號 / 事件 / 處理人">
+      <button class="btn-ghost" id="btn-export-excel" type="button">匯出Excel</button>
     </div>
+    <div class="workload-bar" id="workload-bar"></div>
     <div id="table-area"><div class="loading">讀取資料中...</div></div>
   </div>
 
@@ -287,6 +307,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ============================================================
    請把下面這行換成你自己部署 Google Apps Script 後拿到的網址
@@ -396,6 +417,9 @@ let currentUser = null;
 let editingId = null;
 let deletingId = null;
 let currentStatusFilter = new Set(["未結案", "處理中"]); // 預設不顯示已結案，避免清單被舊資料塞滿
+let currentPage = 1;
+const PAGE_SIZE = 20;
+const STALE_DAYS = 7; // 未結案/處理中超過這個天數就標示「滯留」，跟車輛/任務本身的到期日是兩件事
 
 function todayStr() {
   const d = new Date();
@@ -530,6 +554,30 @@ function isOverdue(item) {
   return item.due < todayStr();
 }
 
+// 從「處理日期」算到今天過了幾天，用來偵測「案子開了很久沒人結案」，跟預計完成日是否逾期是兩個獨立的概念
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(todayStr() + "T00:00:00");
+  const start = new Date(dateStr + "T00:00:00");
+  if (isNaN(start.getTime())) return null;
+  return Math.round((today - start) / 86400000);
+}
+
+function isStale(item) {
+  if (item.progress === "已結案") return false;
+  const d = daysSince(item.date);
+  return d !== null && d >= STALE_DAYS;
+}
+
+// 排序優先度：逾期 → 3天內到期 → 7天內到期 → 其餘。同一級距內再依到期日由近到遠排序
+function sortPriority_(it) {
+  if (isOverdue(it)) return 0;
+  const d = it.due ? daysUntil(it.due) : null;
+  if (d !== null && d <= 3) return 1;
+  if (d !== null && d <= 7) return 2;
+  return 3;
+}
+
 // 進度的內部儲存值維持「未結案」（相容既有資料），畫面上顯示成「未處理」
 function progressLabel_(p) {
   return p === "未結案" ? "未處理" : p;
@@ -567,7 +615,8 @@ function normalizeDateInput_(raw) {
   return year + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
 }
 
-function render() {
+// 共用的篩選＋排序邏輯，畫面渲染跟匯出Excel都呼叫這個，避免兩邊邏輯兜不起來
+function getFilteredSorted_() {
   const stationFilter = document.getElementById("filter-station").value;
   const regionFilter = document.getElementById("filter-region").value;
   const search = document.getElementById("filter-search").value.trim().toLowerCase();
@@ -578,6 +627,7 @@ function render() {
     if (stationFilter && it.station !== stationFilter) return false;
     if (regionFilter && (it.region || regionOf(it.station)) !== regionFilter) return false;
     if (search) {
+      // 搜尋作用在「全部符合篩選條件的資料」上，不是只搜目前這一頁，所以不管有幾頁都能直接搜到
       const hay = ((it.car||"") + (it.event||"") + (it.handler||"") + (it.method||"")).toLowerCase();
       if (!hay.includes(search)) return false;
     }
@@ -585,14 +635,25 @@ function render() {
   });
 
   filtered.sort((a, b) => {
+    const pa = sortPriority_(a), pb = sortPriority_(b);
+    if (pa !== pb) return pa - pb;
     return (a.due || "9999").localeCompare(b.due || "9999");
   });
+
+  return filtered;
+}
+
+function render() {
+  const filtered = getFilteredSorted_();
 
   const activeItems = items.filter(i => i.deleted !== "Y");
   document.getElementById("stat-open").textContent = activeItems.filter(i => i.progress === "未結案").length;
   document.getElementById("stat-progress").textContent = activeItems.filter(i => i.progress === "處理中").length;
   document.getElementById("stat-closed").textContent = activeItems.filter(i => i.progress === "已結案").length;
   document.getElementById("stat-overdue").textContent = activeItems.filter(isOverdue).length;
+  document.getElementById("stat-stale").textContent = activeItems.filter(isStale).length;
+
+  renderWorkloadChips(activeItems);
 
   const area = document.getElementById("table-area");
   if (filtered.length === 0) {
@@ -600,20 +661,32 @@ function render() {
     return;
   }
 
+  // 分頁：先篩選＋排序完整份資料，再切出目前頁碼要顯示的20筆
+  const totalItems = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
   let html = '<table><thead><tr>' +
     '<th></th><th>處理日期</th><th>車號</th><th>區域</th><th>站所</th><th>處理事件</th>' +
-    '<th>處理人</th><th>處理方式</th><th>進度</th><th>預計完成日</th><th>登記人</th><th>定檢提醒</th><th></th>' +
+    '<th>處理人</th><th>處理方式</th><th>進度</th><th>滯留天數</th><th>預計完成日</th><th>登記人</th><th>定檢提醒</th><th></th>' +
     '</tr></thead><tbody>';
 
-  filtered.forEach(it => {
+  pageItems.forEach(it => {
     const overdue = isOverdue(it);
     const isClosed = it.progress === "已結案";
+    const stale = isStale(it);
     const progressCell = '<span class="badge ' + it.progress + '">' + escapeHtml(progressLabel_(it.progress)) + '</span>';
     const dueCell = isClosed
       ? ('已結案：' + escapeHtml(it.closedDate || ''))
       : (escapeHtml(it.due || "") + (overdue ? ' 逾期' : ''));
     const lastUpdateText = formatUpdatedAt_(it.updatedAt);
-    html += '<tr>' +
+    const staleDays = isClosed ? null : daysSince(it.date);
+    const staleCell = staleDays === null ? '<span style="color:#C8C4B8;">—</span>'
+      : (stale ? ('<span class="stale-badge">滯留' + staleDays + '天</span>') : (staleDays + '天'));
+    html += '<tr' + (stale ? ' class="stale"' : '') + '>' +
       '<td><span class="rail ' + it.progress + '"></span></td>' +
       '<td class="mono">' + escapeHtml(it.date || "") + '</td>' +
       '<td class="mono">' + escapeHtml(it.car || "") + '</td>' +
@@ -623,6 +696,7 @@ function render() {
       '<td>' + escapeHtml(it.handler || "") + '</td>' +
       '<td>' + escapeHtml(it.method || "") + '</td>' +
       '<td>' + progressCell + '</td>' +
+      '<td style="font-size:12px;">' + staleCell + '</td>' +
       '<td class="mono' + (overdue ? ' overdue' : '') + '">' + dueCell + '</td>' +
       '<td style="font-size:11px;color:#9A968A;">' + escapeHtml((it.updatedByName || it.createdByName || "")) +
         (lastUpdateText ? ('<div style="color:#C8C4B8;">' + escapeHtml(lastUpdateText) + '</div>') : '') + '</td>' +
@@ -635,7 +709,114 @@ function render() {
   });
 
   html += '</tbody></table>';
+  html += renderPaginationHtml_(currentPage, totalPages, totalItems);
   area.innerHTML = html;
+}
+
+// ---- 分頁 ----
+function buildPageNumbers_(current, total) {
+  const pages = [];
+  const windowSize = 1;
+  for (let p = 1; p <= total; p++) {
+    if (p === 1 || p === total || (p >= current - windowSize && p <= current + windowSize)) {
+      pages.push(p);
+    } else if (pages[pages.length - 1] !== "...") {
+      pages.push("...");
+    }
+  }
+  return pages;
+}
+
+function renderPaginationHtml_(current, total, totalItems) {
+  if (total <= 1) return '';
+  const pages = buildPageNumbers_(current, total);
+  let html = '<div class="pagination">';
+  html += '<button' + (current === 1 ? ' disabled' : '') + ' onclick="goToPage(' + (current - 1) + ')">‹ 上一頁</button>';
+  pages.forEach(p => {
+    if (p === "...") {
+      html += '<span class="page-info">…</span>';
+    } else {
+      html += '<button class="' + (p === current ? 'active' : '') + '" onclick="goToPage(' + p + ')">' + p + '</button>';
+    }
+  });
+  html += '<button' + (current === total ? ' disabled' : '') + ' onclick="goToPage(' + (current + 1) + ')">下一頁 ›</button>';
+  html += '<span class="page-info">共 ' + totalItems + ' 筆 · 第 ' + current + '/' + total + ' 頁</span>';
+  html += '</div>';
+  return html;
+}
+
+function goToPage(p) {
+  currentPage = p;
+  render();
+  document.getElementById("table-area").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---- 依處理人分組的工作量小卡（只算未結案+處理中，已結案不算進去）----
+function renderWorkloadChips(activeItems) {
+  const bar = document.getElementById("workload-bar");
+  if (!bar) return;
+  const counts = {};
+  activeItems.forEach(it => {
+    if (it.progress === "已結案") return;
+    const name = (it.handler || "").trim();
+    if (!name) return;
+    counts[name] = (counts[name] || 0) + 1;
+  });
+  const names = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  if (names.length === 0) {
+    bar.innerHTML = '';
+    return;
+  }
+  const activeSearch = document.getElementById("filter-search").value.trim();
+  bar.innerHTML = names.map(name =>
+    '<div class="workload-chip' + (activeSearch === name ? ' active' : '') + '" onclick="filterByHandler(\'' + name.replace(/'/g, "\\'") + '\')">' +
+      escapeHtml(name) + '　<span class="n">' + counts[name] + '</span> 件未結案' +
+    '</div>'
+  ).join("");
+}
+
+function filterByHandler(name) {
+  const searchEl = document.getElementById("filter-search");
+  searchEl.value = (searchEl.value.trim() === name) ? "" : name; // 再點一次同一個人就取消篩選
+  currentPage = 1;
+  render();
+}
+
+// ---- 匯出Excel：匯出「目前篩選條件下」的完整結果（不只目前這一頁），欄位跟畫面看到的一致 ----
+function exportToExcel() {
+  if (typeof XLSX === "undefined") {
+    alert("匯出功能載入中，請稍後再試一次");
+    return;
+  }
+  const filtered = getFilteredSorted_();
+  if (filtered.length === 0) {
+    alert("目前篩選結果沒有資料可匯出");
+    return;
+  }
+  const rows = filtered.map(it => {
+    const isClosed = it.progress === "已結案";
+    const staleDays = isClosed ? null : daysSince(it.date);
+    return {
+      "處理日期": it.date || "",
+      "車號": it.car || "",
+      "區域": it.region || regionOf(it.station) || "",
+      "站所": it.station || "",
+      "處理事件": it.event || "",
+      "處理人": it.handler || "",
+      "處理方式": it.method || "",
+      "進度": progressLabel_(it.progress),
+      "滯留天數": staleDays === null ? "" : staleDays,
+      "預計完成日": isClosed ? "" : (it.due || ""),
+      "已結案日期": isClosed ? (it.closedDate || "") : "",
+      "逾期": isOverdue(it) ? "是" : "",
+      "登記人": it.createdByName || "",
+      "最後更新人": it.updatedByName || ""
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "待辦事項");
+  XLSX.writeFile(wb, "車輛管理待辦事項_" + todayStr().replace(/-/g, "") + ".xlsx");
 }
 
 function escapeHtml(s) {
@@ -830,12 +1011,14 @@ document.querySelectorAll(".status-tab").forEach(tab => {
       currentStatusFilter.add(v);
       tab.classList.add("active");
     }
+    currentPage = 1;
     render();
   });
 });
-document.getElementById("filter-station").addEventListener("change", render);
-document.getElementById("filter-region").addEventListener("change", render);
-document.getElementById("filter-search").addEventListener("input", render);
+document.getElementById("filter-station").addEventListener("change", () => { currentPage = 1; render(); });
+document.getElementById("filter-region").addEventListener("change", () => { currentPage = 1; render(); });
+document.getElementById("filter-search").addEventListener("input", () => { currentPage = 1; render(); });
+document.getElementById("btn-export-excel").addEventListener("click", exportToExcel);
 
 document.getElementById("btn-switch-identity").addEventListener("click", showLoginGate);
 document.getElementById("btn-toggle-roster").addEventListener("click", () => {
