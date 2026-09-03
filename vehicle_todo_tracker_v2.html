@@ -640,12 +640,28 @@ function isStale(item) {
 }
 
 // 排序優先度：逾期 → 3天內到期 → 7天內到期 → 其餘。同一級距內再依到期日由近到遠排序
+// 排序優先度：同時看「待辦事項本身的預計完成日」跟「這台車的定檢到期日」，
+// 兩者只要有一個逾期就是最緊急；沒有逾期的話，取兩者中比較接近到期的天數來分級。
+// 這樣即使待辦事項自己填的完成日還很寬鬆，只要車輛定檢快到期，這筆還是會被排到最上面。
 function sortPriority_(it) {
-  if (isOverdue(it)) return 0;
-  const d = it.due ? daysUntil(it.due) : null;
-  if (d !== null && d <= 3) return 1;
-  if (d !== null && d <= 7) return 2;
-  return 3;
+  const taskOverdue = isOverdue(it);
+  const v = lookupVehicle(it.car);
+  const inspD = (v && v.lastInspectionDate) ? daysUntil(v.lastInspectionDate) : null;
+  const inspOverdue = inspD !== null && inspD < 0;
+
+  if (taskOverdue || inspOverdue) return 0;
+
+  const taskD = it.due ? daysUntil(it.due) : null;
+  const candidates = [];
+  if (taskD !== null) candidates.push(taskD);
+  if (inspD !== null) candidates.push(inspD);
+  if (candidates.length === 0) return 4;
+
+  const nearest = Math.min(...candidates);
+  if (nearest <= 3) return 1;
+  if (nearest <= 7) return 2;
+  if (nearest <= 30) return 3; // 車輛定檢30天內到期，即使待辦本身不急也要提前排上來
+  return 4;
 }
 
 // 進度的內部儲存值維持「未結案」（相容既有資料），畫面上顯示成「未處理」
