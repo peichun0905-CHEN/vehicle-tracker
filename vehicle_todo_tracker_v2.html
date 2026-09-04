@@ -144,18 +144,6 @@
   .pagination button.active { background: #2C4A63; color: #fff; border-color: #2C4A63; }
   .pagination button:disabled { color: #C8C4B8; cursor: not-allowed; }
   .pagination .page-info { font-size: 12px; color: #9A968A; margin: 0 6px; }
-
-  .insp-panel { border-color: #E8B7A8; }
-  .insp-panel h2 { color: #A8481F; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-  .insp-panel h2 .insp-count { font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 600; color: #9A968A; }
-  .insp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .insp-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: #6B6B63; padding: 6px 10px; border-bottom: 2px solid #E1DDD0; }
-  .insp-table td { padding: 8px 10px; border-bottom: 1px solid #EFEDE4; }
-  .insp-table tr.insp-overdue td { background: #FCEBEB; }
-  .insp-table tr.insp-soon td { background: #FDF3E4; }
-  .insp-day-overdue { color: #C1443C; font-weight: 700; }
-  .insp-day-soon { color: #A8481F; font-weight: 700; }
-  .insp-empty { padding: 16px 4px; color: #9A968A; font-size: 13px; text-align: center; }
 </style>
 </head>
 <body>
@@ -183,11 +171,6 @@
         <div class="stat red"><div class="num" id="stat-stale">0</div><div class="lbl">滯留>7天</div></div>
       </div>
     </div>
-  </div>
-
-  <div class="panel insp-panel">
-    <h2>🚗 車輛定檢到期提醒（自動掃描全公司車籍，已逾期或30天內）<span class="insp-count" id="insp-count"></span></h2>
-    <div id="insp-area"><div class="insp-empty">讀取中...</div></div>
   </div>
 
   <div class="panel roster-panel" id="roster-panel">
@@ -430,7 +413,6 @@ function updateInspectionStatusUI() {
 let items = [];
 let roster = [];
 let vehicles = {}; // 車輛主檔+定檢對照表，key 為車牌號碼或車代號
-let vehicleList = []; // 去重複的全公司車輛清單，給「定檢到期提醒」面板用
 let currentUser = null;
 let editingId = null;
 let deletingId = null;
@@ -549,7 +531,6 @@ async function loadAll() {
     if (data.ok) {
       items = data.cases || [];
       vehicles = data.vehicles || {};
-      vehicleList = data.vehicleList || [];
       if (data.roster && data.roster.length) {
         roster = data.roster;
       } else {
@@ -565,58 +546,7 @@ async function loadAll() {
     document.getElementById("last-sync").textContent = "同步失敗，請確認網路或稍後重新整理";
     if (roster.length === 0) roster = [...DEFAULT_ROSTER];
   }
-  renderInspectionAlerts();
   render();
-}
-
-// ---- 定檢到期提醒（自動掃描全公司車籍，不需要有人手動建待辦事項才會出現）----
-const INSPECTION_ALERT_DAYS = 30; // 已逾期或剩不到這個天數就列進提醒面板
-
-function renderInspectionAlerts() {
-  const countEl = document.getElementById("insp-count");
-  const area = document.getElementById("insp-area");
-  if (!area) return;
-
-  const withDate = vehicleList
-    .filter(v => v.lastInspectionDate)
-    .map(v => ({ ...v, daysLeft: daysUntil(v.lastInspectionDate) }))
-    .filter(v => v.daysLeft !== null && v.daysLeft <= INSPECTION_ALERT_DAYS);
-
-  withDate.sort((a, b) => a.daysLeft - b.daysLeft); // 已逾期最多天的排最前面，越接近今天的越後面
-
-  const overdueCount = withDate.filter(v => v.daysLeft < 0).length;
-  countEl.textContent = withDate.length
-    ? ('共 ' + withDate.length + ' 台（含已逾期 ' + overdueCount + ' 台）')
-    : '';
-
-  if (vehicleList.length === 0) {
-    area.innerHTML = '<div class="insp-empty">尚未讀到車輛主檔/定檢資料，請確認「主檔_原始」「定檢_原始」分頁已貼上最新報表</div>';
-    return;
-  }
-  if (withDate.length === 0) {
-    area.innerHTML = '<div class="insp-empty">目前沒有已逾期或30天內到期的車輛 🎉</div>';
-    return;
-  }
-
-  let html = '<table class="insp-table"><thead><tr>' +
-    '<th>站所</th><th>車牌號碼</th><th>車代號</th><th>最後定檢日</th><th>狀態</th>' +
-    '</tr></thead><tbody>';
-  withDate.forEach(v => {
-    const overdue = v.daysLeft < 0;
-    const rowClass = overdue ? 'insp-overdue' : 'insp-soon';
-    const statusText = overdue
-      ? ('<span class="insp-day-overdue">已逾期 ' + Math.abs(v.daysLeft) + ' 天</span>')
-      : ('<span class="insp-day-soon">剩 ' + v.daysLeft + ' 天</span>');
-    html += '<tr class="' + rowClass + '">' +
-      '<td>' + escapeHtml(v.station || '') + '</td>' +
-      '<td class="mono">' + escapeHtml(v.plate || '') + '</td>' +
-      '<td class="mono">' + escapeHtml(v.carCode || '') + '</td>' +
-      '<td class="mono">' + escapeHtml(v.lastInspectionDate || '') + '</td>' +
-      '<td>' + statusText + '</td>' +
-      '</tr>';
-  });
-  html += '</tbody></table>';
-  area.innerHTML = html;
 }
 
 function isOverdue(item) {
