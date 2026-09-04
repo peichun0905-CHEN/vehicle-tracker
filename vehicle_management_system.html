@@ -61,16 +61,15 @@
   .filters input[type="text"] { min-width: 180px; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6B6B63; padding: 8px 10px; border-bottom: 2px solid #E1DDD0; white-space: nowrap; }
-  tbody tr { border-bottom: 1px solid #EFEDE4; }
+  thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6B6B63; padding: 8px 10px; border: 1px solid #EFEDE4; white-space: nowrap; }
   tbody tr:hover { background: #FAF9F5; }
-  tbody td { padding: 10px; }
+  tbody td { padding: 10px; border: 1px solid #EFEDE4; white-space: nowrap; }
   tbody td.mono { font-family: "IBM Plex Mono", monospace; }
 
   tbody tr.row-overdue td { background: #FCEBEB; }
   tbody tr.row-soon td { background: #FDF3E4; }
   .day-overdue { color: #C1443C; font-weight: 700; }
-  .day-soon { color: #A8481F; font-weight: 700; }
+  .day-soon { color: #D98F32; font-weight: 700; }
 
   .empty { text-align: center; padding: 40px 20px; color: #9A968A; font-size: 13px; }
   .loading { text-align: center; padding: 60px; color: #9A968A; font-size: 13px; }
@@ -95,6 +94,11 @@
 
   .summary-table th, .summary-table td { text-align: right; }
   .summary-table th:first-child, .summary-table td:first-child { text-align: left; }
+  .summary-table tbody tr { cursor: pointer; }
+  .summary-table tbody tr.selected td { background: #EAF0E8; }
+  .table-scroll { overflow-x: auto; }
+  .btn-ghost { background: transparent; color: #6B6B63; border: 1px solid #D8D3C6; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-ghost:hover { background: #F0EEE6; }
   .summary-table td strong { font-family: "IBM Plex Mono", monospace; }
 
   @media (max-width: 780px) {
@@ -133,6 +137,7 @@
   </main>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ============================================================
    跟 vehicle_todo_tracker 共用同一個 Apps Script 後端，
@@ -151,6 +156,7 @@ const READY_MODULES = ["inspection"]; // 目前只有這個模組做好了，其
 
 let currentModule = "inspection";
 let vehicleList = [];
+let stationList = []; // 完整站所清單（含區域），給各站彙總表用
 
 function todayStr() {
   const d = new Date();
@@ -185,6 +191,7 @@ async function loadData() {
     const data = await apiGet();
     if (data.ok) {
       vehicleList = data.vehicleList || [];
+      stationList = data.stationList || [];
       document.getElementById("content-sync").textContent = "已同步 · " + new Date().toLocaleTimeString("zh-TW", {hour:"2-digit", minute:"2-digit"});
     }
   } catch (e) {
@@ -219,6 +226,7 @@ function renderCurrentModule() {
 // ---- 即時定檢模組 ----
 let inspRegionFilter = "";   // 目前選的區域篩選（空字串＝全部）
 let inspBucketFilter = null; // 目前選的天數區間篩選（1/2/3，null＝不篩）
+let inspStationFilter = null; // 目前選的站所篩選（雙擊彙總表列觸發，null＝不篩）
 
 // 天數分級：1＝20天內(含，含已逾期)、2＝21-40天、3＝41-60天、0＝超過60天不列入這頁範圍
 function inspTier_(d) {
@@ -246,6 +254,11 @@ function setInspBucket_(tier) {
   renderInspectionModule();
 }
 
+function setInspStation_(name) {
+  inspStationFilter = (inspStationFilter === name) ? null : name; // 再雙擊同一站就取消篩選
+  renderInspectionModule();
+}
+
 function renderInspectionModule() {
   const area = document.getElementById("content-area");
   const all = computeInspRows_();
@@ -255,20 +268,21 @@ function renderInspectionModule() {
     return;
   }
 
-  const regions = Array.from(new Set(all.map(v => v.region).filter(r => r))).sort();
+  const regions = Array.from(new Set(stationList.map(s => s.region).filter(r => r))).sort();
   const withinWindow = all.filter(v => inspTier_(v.daysLeft) > 0); // 只留60天內（含逾期）的，這頁的目的是「快到期」不是全公司車籍
 
   const c1 = withinWindow.filter(v => inspTier_(v.daysLeft) === 1).length;
   const c2 = withinWindow.filter(v => inspTier_(v.daysLeft) === 2).length;
   const c3 = withinWindow.filter(v => inspTier_(v.daysLeft) === 3).length;
 
-  // 明細表：套用區域＋天數區間篩選，依剩餘天數由少到多排序
+  // 明細表：套用區域＋天數區間＋站所篩選，依剩餘天數由少到多排序
   let rows = withinWindow;
   if (inspRegionFilter) rows = rows.filter(v => v.region === inspRegionFilter);
   if (inspBucketFilter) rows = rows.filter(v => inspTier_(v.daysLeft) === inspBucketFilter);
+  if (inspStationFilter) rows = rows.filter(v => v.station === inspStationFilter);
   rows.sort((a, b) => a.daysLeft - b.daysLeft);
 
-  // 站所彙總：套用區域篩選（不套用天數區間篩選，彙總表本來就是要一次看三個級距）
+  // 站所彙總：先算出每站的三個級距次數
   const byStation = {};
   withinWindow.forEach(v => {
     if (inspRegionFilter && v.region !== inspRegionFilter) return;
@@ -277,9 +291,19 @@ function renderInspectionModule() {
     const t = inspTier_(v.daysLeft);
     if (t === 1) byStation[key].t1++; else if (t === 2) byStation[key].t2++; else if (t === 3) byStation[key].t3++;
   });
-  const stationRows = Object.keys(byStation)
-    .map(name => ({ name, t1: byStation[name].t1, t2: byStation[name].t2, t3: byStation[name].t3, total: byStation[name].t1 + byStation[name].t2 + byStation[name].t3 }))
-    .sort((a, b) => b.total - a.total);
+
+  // 有選特定區域的話，把該區域「所有站所」都列出來（就算目前是0台），不是只列有資料的站
+  let stationNames;
+  if (inspRegionFilter) {
+    stationNames = stationList.filter(s => s.region === inspRegionFilter).map(s => s.name);
+    Object.keys(byStation).forEach(n => { if (stationNames.indexOf(n) === -1) stationNames.push(n); });
+  } else {
+    stationNames = Object.keys(byStation); // 全部區域：只列有資料的站，不然近百個站會列不完
+  }
+  const stationRows = Array.from(new Set(stationNames)).map(name => {
+    const s = byStation[name] || { t1: 0, t2: 0, t3: 0 };
+    return { name, t1: s.t1, t2: s.t2, t3: s.t3, total: s.t1 + s.t2 + s.t3 };
+  }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
   let html = '';
 
@@ -296,16 +320,20 @@ function renderInspectionModule() {
   });
   html += '</select>';
   if (inspBucketFilter) html += '<button class="btn-ghost" onclick="setInspBucket_(null)" type="button">清除天數篩選 ×</button>';
+  if (inspStationFilter) html += '<button class="btn-ghost" onclick="setInspStation_(null)" type="button">清除站所篩選：' + escapeHtml(inspStationFilter) + ' ×</button>';
+  html += '<button class="btn-ghost" id="btn-insp-export" type="button">匯出Excel</button>';
   html += '</div>';
 
   html += '<div class="panel">';
-  html += '<h2>各站彙總<span class="count">依合計數由多到少排序</span></h2>';
+  html += '<h2>各站彙總<span class="count">依合計數由多到少排序 · 雙擊站名可篩選明細</span></h2>';
   if (stationRows.length === 0) {
     html += '<div class="empty">目前沒有60天內到期的車輛 🎉</div>';
   } else {
     html += '<table class="summary-table"><thead><tr><th>站所</th><th>20天內</th><th>21-40天</th><th>41-60天</th><th>合計</th></tr></thead><tbody>';
     stationRows.forEach(s => {
-      html += '<tr><td>' + escapeHtml(s.name) + '</td><td>' + s.t1 + '</td><td>' + s.t2 + '</td><td>' + s.t3 + '</td><td><strong>' + s.total + '</strong></td></tr>';
+      const rowClass = inspStationFilter === s.name ? ' class="selected"' : '';
+      html += '<tr' + rowClass + ' ondblclick="setInspStation_(\'' + s.name.replace(/'/g, "\\'") + '\')">' +
+        '<td>' + escapeHtml(s.name) + '</td><td>' + s.t1 + '</td><td>' + s.t2 + '</td><td>' + s.t3 + '</td><td><strong>' + s.total + '</strong></td></tr>';
     });
     html += '</tbody></table>';
   }
@@ -316,15 +344,15 @@ function renderInspectionModule() {
   if (rows.length === 0) {
     html += '<div class="empty">目前篩選條件下沒有資料</div>';
   } else {
-    html += '<table><thead><tr>' +
+    html += '<div class="table-scroll"><table><thead><tr>' +
       '<th>區域</th><th>站所名稱</th><th>車牌號碼</th><th>車代號</th><th>服務性質</th>' +
       '<th>可驗日期</th><th>最後定檢日</th><th>剩餘時間</th><th>PDT輸入日期</th><th>使用人</th><th>原使用站所</th><th>備註</th>' +
       '</tr></thead><tbody>';
     rows.forEach(v => {
       const t = inspTier_(v.daysLeft);
-      const rowClass = t === 1 ? 'row-overdue' : (t === 2 ? 'row-soon' : '');
+      const daysClass = t === 1 ? 'day-overdue' : (t === 2 ? 'day-soon' : ''); // 20天內紅字、21-40天橘字，41天以上不特別上色
       const daysText = v.daysLeft < 0 ? ('已逾期' + Math.abs(v.daysLeft) + '天') : ('剩' + v.daysLeft + '天');
-      html += '<tr class="' + rowClass + '">' +
+      html += '<tr>' +
         '<td>' + escapeHtml(v.region) + '</td>' +
         '<td>' + escapeHtml(v.station) + '</td>' +
         '<td class="mono">' + escapeHtml(v.plate) + '</td>' +
@@ -332,22 +360,46 @@ function renderInspectionModule() {
         '<td>' + escapeHtml(v.serviceType) + '</td>' +
         '<td class="mono">' + escapeHtml(v.validDate) + '</td>' +
         '<td class="mono">' + escapeHtml(v.lastInspectionDate) + '</td>' +
-        '<td class="mono">' + daysText + '</td>' +
+        '<td class="mono ' + daysClass + '">' + daysText + '</td>' +
         '<td class="mono">' + escapeHtml(v.pdtDate) + '</td>' +
         '<td>' + escapeHtml(v.user) + '</td>' +
         '<td>' + escapeHtml(v.origStation) + '</td>' +
         '<td>' + escapeHtml(v.remark) + '</td>' +
         '</tr>';
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
   }
   html += '</div>';
 
   area.innerHTML = html;
   document.getElementById("insp-region-filter").addEventListener("change", e => {
     inspRegionFilter = e.target.value;
+    inspStationFilter = null; // 換區域時站所篩選一併清掉，避免選到不屬於新區域的站
     renderInspectionModule();
   });
+  document.getElementById("btn-insp-export").addEventListener("click", () => exportInspExcel_(rows));
+}
+
+// 匯出Excel：匯出「目前篩選條件下」的明細表資料
+function exportInspExcel_(rows) {
+  if (typeof XLSX === "undefined") {
+    alert("匯出功能載入中，請稍後再試一次");
+    return;
+  }
+  if (!rows || rows.length === 0) {
+    alert("目前篩選結果沒有資料可匯出");
+    return;
+  }
+  const data = rows.map(v => ({
+    "區域": v.region, "站所名稱": v.station, "車牌號碼": v.plate, "車代號": v.carCode,
+    "服務性質": v.serviceType, "可驗日期": v.validDate, "最後定檢日": v.lastInspectionDate,
+    "剩餘時間": v.daysLeft < 0 ? ("已逾期" + Math.abs(v.daysLeft) + "天") : ("剩" + v.daysLeft + "天"),
+    "PDT輸入日期": v.pdtDate, "使用人": v.user, "原使用站所": v.origStation, "備註": v.remark
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "即時定檢");
+  XLSX.writeFile(wb, "即時定檢_" + todayStr().replace(/-/g, "") + ".xlsx");
 }
 
 // ---- 初始化 ----
