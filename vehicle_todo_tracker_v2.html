@@ -327,7 +327,8 @@ const STATION_REGION = {
 function regionOf(station) { return STATION_REGION[station] || ""; }
 
 // ---- 車輛主檔 / 定檢查詢 ----
-const INSPECTION_WARN_DAYS = 30; // 不到這個天數就標紅字提醒（跟下方「定檢到期提醒」面板用同一個標準）
+const INSPECTION_RED_DAYS = 30;   // 不到這個天數：紅字，最緊急
+const INSPECTION_AMBER_DAYS = 60; // 不到這個天數（但超過紅字門檻）：黃字，提前留意
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
@@ -362,10 +363,12 @@ function inspectionStatusHtml(carInput) {
     const d = daysUntil(v.lastInspectionDate);
     let dateText = '最後定檢日：' + escapeHtml(v.lastInspectionDate);
     if (d !== null) {
-      const isSoon = d < INSPECTION_WARN_DAYS;
       const label = d < 0 ? ('已逾期 ' + Math.abs(d) + ' 天') : ('剩 ' + d + ' 天');
-      dateText += isSoon
-        ? ' <span style="color:#C1443C;font-weight:700;">（' + label + '）</span>'
+      let colorStyle = '';
+      if (d < 0 || d < INSPECTION_RED_DAYS) colorStyle = 'color:#C1443C;font-weight:700;';
+      else if (d < INSPECTION_AMBER_DAYS) colorStyle = 'color:#D98F32;font-weight:700;';
+      dateText += colorStyle
+        ? ' <span style="' + colorStyle + '">（' + label + '）</span>'
         : ' （' + label + '）';
     }
     parts.push(dateText);
@@ -385,7 +388,8 @@ function inspectionBadge(carInput) {
   const d = daysUntil(v.lastInspectionDate);
   if (d === null) return '<span style="color:#9A968A;">尚無定檢</span>';
   if (d < 0) return '<span style="color:#C1443C;font-weight:700;">已逾期' + Math.abs(d) + '天</span>';
-  if (d < INSPECTION_WARN_DAYS) return '<span style="color:#C1443C;font-weight:700;">剩' + d + '天</span>';
+  if (d < INSPECTION_RED_DAYS) return '<span style="color:#C1443C;font-weight:700;">剩' + d + '天</span>';
+  if (d < INSPECTION_AMBER_DAYS) return '<span style="color:#D98F32;font-weight:700;">剩' + d + '天</span>';
   return '<span style="color:#3F7D58;">剩' + d + '天</span>';
 }
 
@@ -570,28 +574,30 @@ function isStale(item) {
 }
 
 // 排序優先度：逾期 → 3天內到期 → 7天內到期 → 其餘。同一級距內再依到期日由近到遠排序
-// 排序優先度：同時看「待辦事項本身的預計完成日」跟「這台車的定檢到期日」，
-// 兩者只要有一個逾期就是最緊急；沒有逾期的話，取兩者中比較接近到期的天數來分級。
-// 這樣即使待辦事項自己填的完成日還很寬鬆，只要車輛定檢快到期，這筆還是會被排到最上面。
-function sortPriority_(it) {
-  const taskOverdue = isOverdue(it);
+// 算出這筆待辦事項「實際最緊急的天數」：待辦本身的預計完成日、跟這台車的定檢到期日，取比較接近的那個。
+// 逾期算負數天數。兩者都沒有的話回傳 Infinity（排到最後）。
+// 這個數字同時拿來分級距，也拿來當同一級距內的排序依據，才不會發生「定檢明明比較急，卻因為待辦自己填的完成日比較晚而被排到後面」的狀況。
+function nearestUrgencyDays_(it) {
   const v = lookupVehicle(it.car);
   const inspD = (v && v.lastInspectionDate) ? daysUntil(v.lastInspectionDate) : null;
-  const inspOverdue = inspD !== null && inspD < 0;
-
-  if (taskOverdue || inspOverdue) return 0;
-
   const taskD = it.due ? daysUntil(it.due) : null;
   const candidates = [];
   if (taskD !== null) candidates.push(taskD);
   if (inspD !== null) candidates.push(inspD);
-  if (candidates.length === 0) return 4;
+  if (candidates.length === 0) return Infinity;
+  return Math.min(...candidates);
+}
 
-  const nearest = Math.min(...candidates);
+// 排序級距：適用於未處理＋處理中，已結案的不用往前排
+function sortPriority_(it) {
+  if (it.progress === "已結案") return 6;
+  const nearest = nearestUrgencyDays_(it);
+  if (nearest < 0) return 0;      // 逾期（待辦本身或車輛定檢，任一個）
   if (nearest <= 3) return 1;
   if (nearest <= 7) return 2;
-  if (nearest <= 30) return 3; // 車輛定檢30天內到期，即使待辦本身不急也要提前排上來
-  return 4;
+  if (nearest <= 30) return 3;    // 30天內（紅字）
+  if (nearest <= 60) return 4;    // 30-60天（黃字）
+  return 5;
 }
 
 // 進度的內部儲存值維持「未結案」（相容既有資料），畫面上顯示成「未處理」
@@ -653,7 +659,7 @@ function getFilteredSorted_() {
   filtered.sort((a, b) => {
     const pa = sortPriority_(a), pb = sortPriority_(b);
     if (pa !== pb) return pa - pb;
-    return (a.due || "9999").localeCompare(b.due || "9999");
+    return nearestUrgencyDays_(a) - nearestUrgencyDays_(b);
   });
 
   return filtered;
