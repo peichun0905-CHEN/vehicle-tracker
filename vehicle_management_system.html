@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>車管部 · 車管系統</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Inter", "Noto Sans TC", -apple-system, sans-serif;
+    background: #F5F3ED;
+    color: #1C2B39;
+  }
+
+  /* ---- 整體外殼：左側選單 + 右側內容區 ---- */
+  .app-shell { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: #1C2B39;
+    color: #F5F3ED;
+    padding: 20px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar-brand { font-size: 16px; font-weight: 700; padding: 6px 10px 18px; letter-spacing: 0.4px; }
+  .sidebar-brand .sub { display: block; font-size: 11px; font-weight: 400; color: #9FB3C4; margin-top: 4px; }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; color: #C7D2DA;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.06); }
+  .nav-item.active { background: #2C4A63; color: #FFFFFF; }
+  .nav-item .soon-tag {
+    margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+    background: rgba(255,255,255,0.1); color: #9FB3C4; padding: 2px 6px; border-radius: 10px;
+  }
+
+  .main-area { flex: 1; min-width: 0; padding: 24px; }
+
+  .content-topbar {
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .content-topbar h1 { font-size: 20px; font-weight: 700; margin: 0; }
+  .content-topbar .sub { font-size: 12px; color: #6B6B63; margin-top: 4px; font-family: "IBM Plex Mono", monospace; }
+
+  .panel { background: #FFFFFF; border: 1px solid #E1DDD0; border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+  .panel h2 { font-size: 14px; font-weight: 700; margin: 0 0 14px; color: #2C4A63; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .panel h2 .count { font-size: 11px; font-weight: 600; color: #9A968A; text-transform: none; }
+
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filters select, .filters input { padding: 7px 10px; border: 1px solid #D8D3C6; border-radius: 6px; font-size: 13px; background: #FCFBF8; font-family: inherit; }
+  .filters input[type="text"] { min-width: 180px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6B6B63; padding: 8px 10px; border-bottom: 2px solid #E1DDD0; white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid #EFEDE4; }
+  tbody tr:hover { background: #FAF9F5; }
+  tbody td { padding: 10px; }
+  tbody td.mono { font-family: "IBM Plex Mono", monospace; }
+
+  tbody tr.row-overdue td { background: #FCEBEB; }
+  tbody tr.row-soon td { background: #FDF3E4; }
+  .day-overdue { color: #C1443C; font-weight: 700; }
+  .day-soon { color: #A8481F; font-weight: 700; }
+
+  .empty { text-align: center; padding: 40px 20px; color: #9A968A; font-size: 13px; }
+  .loading { text-align: center; padding: 60px; color: #9A968A; font-size: 13px; }
+
+  .placeholder-panel { text-align: center; padding: 60px 24px; color: #6B6B63; }
+  .placeholder-panel .icon { font-size: 32px; margin-bottom: 12px; }
+  .placeholder-panel h3 { font-size: 16px; margin: 0 0 8px; color: #2C4A63; }
+  .placeholder-panel p { font-size: 13px; margin: 0; line-height: 1.7; max-width: 420px; margin: 0 auto; }
+
+  .setup-warning { background: #FCEBEB; border: 1px solid #F0999B; color: #791F1F; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; line-height: 1.6; }
+  .setup-warning code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; }
+
+  .stat-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stat-card { flex: 1; min-width: 150px; background: #FFFFFF; border: 1px solid #E1DDD0; border-radius: 10px; padding: 14px 16px; cursor: pointer; }
+  .stat-card:hover { border-color: #B7C4CD; }
+  .stat-card.active { border-color: #2C4A63; background: #EFF3F6; }
+  .stat-card .num { font-size: 26px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .stat-card.tier-1 .num { color: #C1443C; }
+  .stat-card.tier-2 .num { color: #D98F32; }
+  .stat-card.tier-3 .num { color: #3F7D58; }
+  .stat-card .lbl { font-size: 12px; color: #6B6B63; margin-top: 4px; }
+
+  .summary-table th, .summary-table td { text-align: right; }
+  .summary-table th:first-child, .summary-table td:first-child { text-align: left; }
+  .summary-table td strong { font-family: "IBM Plex Mono", monospace; }
+
+  @media (max-width: 780px) {
+    .app-shell { flex-direction: column; }
+    .sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px; }
+    .sidebar-brand { display: none; }
+    .nav-item { white-space: nowrap; }
+    table { display: block; overflow-x: auto; white-space: nowrap; }
+  }
+</style>
+</head>
+<body>
+
+<div id="setup-warning-area"></div>
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">車管系統<span class="sub">北二區 · 車輛管理部</span></div>
+    <nav id="nav-list">
+      <div class="nav-item" data-module="qa">💬 車管相關問題<span class="soon-tag">規劃中</span></div>
+      <div class="nav-item" data-module="inspection">🚗 即時定檢</div>
+      <div class="nav-item" data-module="dispatch">🚚 出車管理<span class="soon-tag">規劃中</span></div>
+      <div class="nav-item" data-module="maintenance">🔧 即時維修費用<span class="soon-tag">規劃中</span></div>
+      <div class="nav-item" data-module="fuel">⛽ 即時用油狀況<span class="soon-tag">規劃中</span></div>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <div class="content-topbar">
+      <div>
+        <h1 id="content-title">即時定檢</h1>
+        <div class="sub" id="content-sync">同步中...</div>
+      </div>
+    </div>
+    <div id="content-area"><div class="loading">讀取資料中...</div></div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   跟 vehicle_todo_tracker 共用同一個 Apps Script 後端，
+   因為後端 doGet 已經會回傳 vehicleList（全公司車輛+定檢對照表）
+   ============================================================ */
+const API_URL = "https://script.google.com/macros/s/AKfycbwg282SL60pRiLgzjSOMCEpyn1i3lwr5I9LsoCGfwu9UE57bAimFXPFeSo4WPZL87Oc1Q/exec";
+
+const MODULE_LABELS = {
+  qa: "車管相關問題",
+  inspection: "即時定檢",
+  dispatch: "出車管理",
+  maintenance: "即時維修費用",
+  fuel: "即時用油狀況"
+};
+const READY_MODULES = ["inspection"]; // 目前只有這個模組做好了，其他做完再加進這個陣列
+
+let currentModule = "inspection";
+let vehicleList = [];
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(todayStr() + "T00:00:00");
+  const target = new Date(String(dateStr).trim() + "T00:00:00");
+  if (isNaN(target.getTime())) return null;
+  return Math.round((target - today) / 86400000);
+}
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+async function apiGet() {
+  const res = await fetch(API_URL, { method: "GET" });
+  return res.json();
+}
+
+async function loadData() {
+  if (!API_URL || API_URL.indexOf("PASTE_YOUR") === 0) {
+    document.getElementById("setup-warning-area").innerHTML =
+      '<div class="setup-warning">尚未設定後端網址：請把 Apps Script 部署後拿到的網址貼到這個 HTML 檔案的 <code>API_URL</code> 常數裡。</div>';
+    document.getElementById("content-sync").textContent = "尚未連接後端";
+    return;
+  }
+  try {
+    const data = await apiGet();
+    if (data.ok) {
+      vehicleList = data.vehicleList || [];
+      document.getElementById("content-sync").textContent = "已同步 · " + new Date().toLocaleTimeString("zh-TW", {hour:"2-digit", minute:"2-digit"});
+    }
+  } catch (e) {
+    document.getElementById("content-sync").textContent = "同步失敗，請確認網路或稍後重新整理";
+  }
+}
+
+// ---- 側邊選單切換 ----
+function switchModule(id) {
+  currentModule = id;
+  document.querySelectorAll(".nav-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.module === id);
+  });
+  document.getElementById("content-title").textContent = MODULE_LABELS[id] || id;
+  renderCurrentModule();
+}
+
+function renderCurrentModule() {
+  const area = document.getElementById("content-area");
+  if (!READY_MODULES.includes(currentModule)) {
+    area.innerHTML =
+      '<div class="panel"><div class="placeholder-panel">' +
+        '<div class="icon">🚧</div>' +
+        '<h3>「' + escapeHtml(MODULE_LABELS[currentModule] || "") + '」規劃中</h3>' +
+        '<p>這個模組還沒開始建置，會照架構規劃一步步加上來。目前先完成「即時定檢」這一塊。</p>' +
+      '</div></div>';
+    return;
+  }
+  if (currentModule === "inspection") renderInspectionModule();
+}
+
+// ---- 即時定檢模組 ----
+let inspRegionFilter = "";   // 目前選的區域篩選（空字串＝全部）
+let inspBucketFilter = null; // 目前選的天數區間篩選（1/2/3，null＝不篩）
+
+// 天數分級：1＝20天內(含，含已逾期)、2＝21-40天、3＝41-60天、0＝超過60天不列入這頁範圍
+function inspTier_(d) {
+  if (d <= 20) return 1;
+  if (d <= 40) return 2;
+  if (d <= 60) return 3;
+  return 0;
+}
+
+function computeInspRows_() {
+  return vehicleList
+    .filter(v => v.lastInspectionDate)
+    .map(v => ({ ...v, daysLeft: daysUntil(v.lastInspectionDate) }))
+    .filter(v => v.daysLeft !== null);
+}
+
+function statCardHtml_(tier, label, count) {
+  const active = inspBucketFilter === tier ? ' active' : '';
+  return '<div class="stat-card tier-' + tier + active + '" onclick="setInspBucket_(' + tier + ')">' +
+    '<div class="num">' + count + '</div><div class="lbl">' + label + '</div></div>';
+}
+
+function setInspBucket_(tier) {
+  inspBucketFilter = (inspBucketFilter === tier) ? null : tier; // 再點一次同一張卡就取消篩選
+  renderInspectionModule();
+}
+
+function renderInspectionModule() {
+  const area = document.getElementById("content-area");
+  const all = computeInspRows_();
+
+  if (vehicleList.length === 0) {
+    area.innerHTML = '<div class="panel"><div class="empty">尚未讀到車輛主檔/定檢資料，請確認「定檢_原始」已貼上最新報表，並執行過「車管工具 → 整理主檔資料」</div></div>';
+    return;
+  }
+
+  const regions = Array.from(new Set(all.map(v => v.region).filter(r => r))).sort();
+  const withinWindow = all.filter(v => inspTier_(v.daysLeft) > 0); // 只留60天內（含逾期）的，這頁的目的是「快到期」不是全公司車籍
+
+  const c1 = withinWindow.filter(v => inspTier_(v.daysLeft) === 1).length;
+  const c2 = withinWindow.filter(v => inspTier_(v.daysLeft) === 2).length;
+  const c3 = withinWindow.filter(v => inspTier_(v.daysLeft) === 3).length;
+
+  // 明細表：套用區域＋天數區間篩選，依剩餘天數由少到多排序
+  let rows = withinWindow;
+  if (inspRegionFilter) rows = rows.filter(v => v.region === inspRegionFilter);
+  if (inspBucketFilter) rows = rows.filter(v => inspTier_(v.daysLeft) === inspBucketFilter);
+  rows.sort((a, b) => a.daysLeft - b.daysLeft);
+
+  // 站所彙總：套用區域篩選（不套用天數區間篩選，彙總表本來就是要一次看三個級距）
+  const byStation = {};
+  withinWindow.forEach(v => {
+    if (inspRegionFilter && v.region !== inspRegionFilter) return;
+    const key = v.station || "（未知站所）";
+    if (!byStation[key]) byStation[key] = { t1: 0, t2: 0, t3: 0 };
+    const t = inspTier_(v.daysLeft);
+    if (t === 1) byStation[key].t1++; else if (t === 2) byStation[key].t2++; else if (t === 3) byStation[key].t3++;
+  });
+  const stationRows = Object.keys(byStation)
+    .map(name => ({ name, t1: byStation[name].t1, t2: byStation[name].t2, t3: byStation[name].t3, total: byStation[name].t1 + byStation[name].t2 + byStation[name].t3 }))
+    .sort((a, b) => b.total - a.total);
+
+  let html = '';
+
+  html += '<div class="stat-row">';
+  html += statCardHtml_(1, "20天內(含)快到期", c1);
+  html += statCardHtml_(2, "21-40天快到期", c2);
+  html += statCardHtml_(3, "41-60天快到期", c3);
+  html += '</div>';
+
+  html += '<div class="filters">';
+  html += '<select id="insp-region-filter"><option value="">全部區域</option>';
+  regions.forEach(r => {
+    html += '<option value="' + escapeHtml(r) + '"' + (r === inspRegionFilter ? ' selected' : '') + '>' + escapeHtml(r) + '</option>';
+  });
+  html += '</select>';
+  if (inspBucketFilter) html += '<button class="btn-ghost" onclick="setInspBucket_(null)" type="button">清除天數篩選 ×</button>';
+  html += '</div>';
+
+  html += '<div class="panel">';
+  html += '<h2>各站彙總<span class="count">依合計數由多到少排序</span></h2>';
+  if (stationRows.length === 0) {
+    html += '<div class="empty">目前沒有60天內到期的車輛 🎉</div>';
+  } else {
+    html += '<table class="summary-table"><thead><tr><th>站所</th><th>20天內</th><th>21-40天</th><th>41-60天</th><th>合計</th></tr></thead><tbody>';
+    stationRows.forEach(s => {
+      html += '<tr><td>' + escapeHtml(s.name) + '</td><td>' + s.t1 + '</td><td>' + s.t2 + '</td><td>' + s.t3 + '</td><td><strong>' + s.total + '</strong></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  html += '<div class="panel">';
+  html += '<h2>車輛明細<span class="count">共' + rows.length + '台</span></h2>';
+  if (rows.length === 0) {
+    html += '<div class="empty">目前篩選條件下沒有資料</div>';
+  } else {
+    html += '<table><thead><tr>' +
+      '<th>區域</th><th>站所名稱</th><th>車牌號碼</th><th>車代號</th><th>服務性質</th>' +
+      '<th>可驗日期</th><th>最後定檢日</th><th>剩餘時間</th><th>PDT輸入日期</th><th>使用人</th><th>原使用站所</th><th>備註</th>' +
+      '</tr></thead><tbody>';
+    rows.forEach(v => {
+      const t = inspTier_(v.daysLeft);
+      const rowClass = t === 1 ? 'row-overdue' : (t === 2 ? 'row-soon' : '');
+      const daysText = v.daysLeft < 0 ? ('已逾期' + Math.abs(v.daysLeft) + '天') : ('剩' + v.daysLeft + '天');
+      html += '<tr class="' + rowClass + '">' +
+        '<td>' + escapeHtml(v.region) + '</td>' +
+        '<td>' + escapeHtml(v.station) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.plate) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.carCode) + '</td>' +
+        '<td>' + escapeHtml(v.serviceType) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.validDate) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.lastInspectionDate) + '</td>' +
+        '<td class="mono">' + daysText + '</td>' +
+        '<td class="mono">' + escapeHtml(v.pdtDate) + '</td>' +
+        '<td>' + escapeHtml(v.user) + '</td>' +
+        '<td>' + escapeHtml(v.origStation) + '</td>' +
+        '<td>' + escapeHtml(v.remark) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  area.innerHTML = html;
+  document.getElementById("insp-region-filter").addEventListener("change", e => {
+    inspRegionFilter = e.target.value;
+    renderInspectionModule();
+  });
+}
+
+// ---- 初始化 ----
+document.querySelectorAll(".nav-item").forEach(el => {
+  el.addEventListener("click", () => switchModule(el.dataset.module));
+});
+
+async function init() {
+  await loadData();
+  switchModule("inspection");
+  setInterval(async () => {
+    await loadData();
+    renderCurrentModule();
+  }, 30000);
+}
+init();
+</script>
+</body>
+</html>
