@@ -96,6 +96,9 @@
   .summary-table th:first-child, .summary-table td:first-child { text-align: left; }
   .summary-table tbody tr { cursor: pointer; }
   .summary-table tbody tr.selected td { background: #EAF0E8; }
+  .count-zero { color: #C8C4B8; }
+  .count-hot-amber { color: #D98F32; font-weight: 700; }
+  .count-hot-red { color: #C1443C; font-weight: 700; }
   .table-scroll { overflow-x: auto; }
   .btn-ghost { background: transparent; color: #6B6B63; border: 1px solid #D8D3C6; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .btn-ghost:hover { background: #F0EEE6; }
@@ -152,7 +155,7 @@ const MODULE_LABELS = {
   maintenance: "即時維修費用",
   fuel: "即時用油狀況"
 };
-const READY_MODULES = ["inspection"]; // 目前只有這個模組做好了，其他做完再加進這個陣列
+const READY_MODULES = ["inspection", "dispatch"]; // 目前完成的模組
 
 let currentModule = "inspection";
 let vehicleList = [];
@@ -221,6 +224,7 @@ function renderCurrentModule() {
     return;
   }
   if (currentModule === "inspection") renderInspectionModule();
+  if (currentModule === "dispatch") renderDispatchModule();
 }
 
 // ---- 即時定檢模組 ----
@@ -401,6 +405,189 @@ function exportInspExcel_(rows) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "即時定檢");
   XLSX.writeFile(wb, "即時定檢_" + todayStr().replace(/-/g, "") + ".xlsx");
+}
+
+// ---- 出車管理模組 ----
+let dispRegionFilter = "";
+let dispBucketFilter = null;  // 1＝15-30天未使用、2＝31天以上未使用
+let dispStationFilter = null;
+
+// 這幾種服務性質不列入出車管理監控（自用車、拖車廂、車架類不算「該常態出車卻沒出車」）
+const DISPATCH_EXCLUDE_KEYWORDS_ = ["自用小客車", "自用小型車", "車廂", "車架"];
+
+function isDispatchTracked_(serviceType) {
+  const s = String(serviceType || "");
+  return !DISPATCH_EXCLUDE_KEYWORDS_.some(k => s.indexOf(k) > -1);
+}
+
+// 未使用天數分級：1＝15-30天、2＝31天以上、0＝不到15天或無法判斷，不列入這頁範圍
+function dispTier_(d) {
+  if (d === null) return 0;
+  if (d >= 15 && d <= 30) return 1;
+  if (d >= 31) return 2;
+  return 0;
+}
+
+function computeDispRows_() {
+  return vehicleList
+    .filter(v => isDispatchTracked_(v.serviceType))
+    .map(v => ({ ...v, idleDays: v.pdtDate ? daysSince_(v.pdtDate) : null }));
+}
+
+function daysSince_(dateStr) {
+  const d = daysUntil(dateStr);
+  return d === null ? null : -d; // daysUntil是「到未來還剩幾天」，這裡要反過來算「過去多少天」
+}
+
+function dispStatCardHtml_(tier, label, count) {
+  const active = dispBucketFilter === tier ? ' active' : '';
+  return '<div class="stat-card tier-' + (tier === 1 ? '2' : '1') + active + '" onclick="setDispBucket_(' + tier + ')">' +
+    '<div class="num">' + count + '</div><div class="lbl">' + label + '</div></div>';
+}
+
+function setDispBucket_(tier) {
+  dispBucketFilter = (dispBucketFilter === tier) ? null : tier;
+  renderDispatchModule();
+}
+
+function setDispStation_(name) {
+  dispStationFilter = (dispStationFilter === name) ? null : name;
+  renderDispatchModule();
+}
+
+function renderDispatchModule() {
+  const area = document.getElementById("content-area");
+  const all = computeDispRows_();
+
+  if (vehicleList.length === 0) {
+    area.innerHTML = '<div class="panel"><div class="empty">尚未讀到車輛主檔資料，請確認「定檢_原始」已貼上最新報表，並執行過「車管工具 → 整理主檔資料」</div></div>';
+    return;
+  }
+
+  const regions = Array.from(new Set(stationList.map(s => s.region).filter(r => r))).sort();
+  const idle = all.filter(v => dispTier_(v.idleDays) > 0); // 只留15天以上未使用的（含無PDT紀錄），14天內算正常不列入
+
+  const windowForStats = dispRegionFilter ? idle.filter(v => v.region === dispRegionFilter) : idle;
+  const d1 = windowForStats.filter(v => dispTier_(v.idleDays) === 1).length;
+  const d2 = windowForStats.filter(v => dispTier_(v.idleDays) === 2).length;
+
+  let rows = idle;
+  if (dispRegionFilter) rows = rows.filter(v => v.region === dispRegionFilter);
+  if (dispBucketFilter) rows = rows.filter(v => dispTier_(v.idleDays) === dispBucketFilter);
+  if (dispStationFilter) rows = rows.filter(v => v.station === dispStationFilter);
+  rows.sort((a, b) => (b.idleDays == null ? 99999 : b.idleDays) - (a.idleDays == null ? 99999 : a.idleDays)); // 未使用天數多的排前面，無紀錄的視為最嚴重排最前
+
+  const byStation = {};
+  idle.forEach(v => {
+    if (dispRegionFilter && v.region !== dispRegionFilter) return;
+    const key = v.station || "（未知站所）";
+    if (!byStation[key]) byStation[key] = { t1: 0, t2: 0 };
+    const t = dispTier_(v.idleDays);
+    if (t === 1) byStation[key].t1++; else if (t === 2) byStation[key].t2++;
+  });
+
+  let stationNames;
+  if (dispRegionFilter) {
+    stationNames = stationList.filter(s => s.region === dispRegionFilter).map(s => s.name);
+    Object.keys(byStation).forEach(n => { if (stationNames.indexOf(n) === -1) stationNames.push(n); });
+  } else {
+    stationNames = Object.keys(byStation);
+  }
+  const stationRows = Array.from(new Set(stationNames)).map(name => {
+    const s = byStation[name] || { t1: 0, t2: 0 };
+    return { name, t1: s.t1, t2: s.t2, total: s.t1 + s.t2 };
+  }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  let html = '';
+
+  html += '<div class="stat-row">';
+  html += dispStatCardHtml_(1, "15-30天未使用", d1);
+  html += dispStatCardHtml_(2, "31天以上未使用", d2);
+  html += '</div>';
+
+  html += '<div class="filters">';
+  html += '<select id="disp-region-filter"><option value="">全部區域</option>';
+  regions.forEach(r => {
+    html += '<option value="' + escapeHtml(r) + '"' + (r === dispRegionFilter ? ' selected' : '') + '>' + escapeHtml(r) + '</option>';
+  });
+  html += '</select>';
+  if (dispBucketFilter) html += '<button class="btn-ghost" onclick="setDispBucket_(null)" type="button">清除天數篩選 ×</button>';
+  if (dispStationFilter) html += '<button class="btn-ghost" onclick="setDispStation_(null)" type="button">清除站所篩選：' + escapeHtml(dispStationFilter) + ' ×</button>';
+  html += '<button class="btn-ghost" id="btn-disp-export" type="button">匯出Excel</button>';
+  html += '</div>';
+
+  html += '<div class="panel">';
+  html += '<h2>各站彙總<span class="count">依合計數由多到少排序 · 雙擊站名可篩選明細</span></h2>';
+  if (stationRows.length === 0) {
+    html += '<div class="empty">目前沒有15天以上未使用的車輛 🎉</div>';
+  } else {
+    html += '<table class="summary-table"><thead><tr><th>站所</th><th>15-30天</th><th>31天以上</th><th>合計</th></tr></thead><tbody>';
+    stationRows.forEach(s => {
+      const rowClass = dispStationFilter === s.name ? ' class="selected"' : '';
+      const t1Cell = s.t1 > 0 ? ('<span class="count-hot-amber">' + s.t1 + '</span>') : ('<span class="count-zero">0</span>');
+      const t2Cell = s.t2 > 0 ? ('<span class="count-hot-red">' + s.t2 + '</span>') : ('<span class="count-zero">0</span>');
+      html += '<tr' + rowClass + ' ondblclick="setDispStation_(\'' + s.name.replace(/'/g, "\\'") + '\')">' +
+        '<td>' + escapeHtml(s.name) + '</td><td>' + t1Cell + '</td><td>' + t2Cell + '</td><td><strong>' + s.total + '</strong></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  html += '<div class="panel">';
+  html += '<h2>車輛明細<span class="count">共' + rows.length + '台</span></h2>';
+  if (rows.length === 0) {
+    html += '<div class="empty">目前篩選條件下沒有資料</div>';
+  } else {
+    html += '<div class="table-scroll"><table><thead><tr>' +
+      '<th>區域</th><th>站所</th><th>服務性質</th><th>車號</th><th>PDT輸入日期</th><th>使用人</th><th>未使用天數</th><th>備註</th>' +
+      '</tr></thead><tbody>';
+    rows.forEach(v => {
+      const t = dispTier_(v.idleDays);
+      const daysClass = t === 2 ? 'day-overdue' : (t === 1 ? 'day-soon' : '');
+      const daysText = v.idleDays == null ? '無PDT紀錄' : (v.idleDays + '天');
+      html += '<tr>' +
+        '<td>' + escapeHtml(v.region) + '</td>' +
+        '<td>' + escapeHtml(v.station) + '</td>' +
+        '<td>' + escapeHtml(v.serviceType) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.plate) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.pdtDate) + '</td>' +
+        '<td>' + escapeHtml(v.user) + '</td>' +
+        '<td class="mono ' + daysClass + '">' + daysText + '</td>' +
+        '<td>' + escapeHtml(v.remark) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '</div>';
+
+  area.innerHTML = html;
+  document.getElementById("disp-region-filter").addEventListener("change", e => {
+    dispRegionFilter = e.target.value;
+    dispStationFilter = null;
+    renderDispatchModule();
+  });
+  document.getElementById("btn-disp-export").addEventListener("click", () => exportDispExcel_(rows));
+}
+
+function exportDispExcel_(rows) {
+  if (typeof XLSX === "undefined") {
+    alert("匯出功能載入中，請稍後再試一次");
+    return;
+  }
+  if (!rows || rows.length === 0) {
+    alert("目前篩選結果沒有資料可匯出");
+    return;
+  }
+  const data = rows.map(v => ({
+    "區域": v.region, "站所": v.station, "服務性質": v.serviceType, "車號": v.plate,
+    "PDT輸入日期": v.pdtDate, "使用人": v.user,
+    "未使用天數": v.idleDays == null ? "無PDT紀錄" : (v.idleDays + "天"),
+    "備註": v.remark
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "出車管理");
+  XLSX.writeFile(wb, "出車管理_" + todayStr().replace(/-/g, "") + ".xlsx");
 }
 
 // ---- 初始化 ----
