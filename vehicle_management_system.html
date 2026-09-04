@@ -116,7 +116,7 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <div class="sidebar-brand">車管系統<span class="sub">北二區 · 車輛管理部</span></div>
+    <div class="sidebar-brand">車管系統<span class="sub">車輛整合管理</span></div>
     <nav id="nav-list">
       <div class="nav-item" data-module="qa">💬 車管相關問題<span class="soon-tag">規劃中</span></div>
       <div class="nav-item" data-module="inspection">🚗 即時定檢</div>
@@ -271,9 +271,10 @@ function renderInspectionModule() {
   const regions = Array.from(new Set(stationList.map(s => s.region).filter(r => r))).sort();
   const withinWindow = all.filter(v => inspTier_(v.daysLeft) > 0); // 只留60天內（含逾期）的，這頁的目的是「快到期」不是全公司車籍
 
-  const c1 = withinWindow.filter(v => inspTier_(v.daysLeft) === 1).length;
-  const c2 = withinWindow.filter(v => inspTier_(v.daysLeft) === 2).length;
-  const c3 = withinWindow.filter(v => inspTier_(v.daysLeft) === 3).length;
+  const windowForStats = inspRegionFilter ? withinWindow.filter(v => v.region === inspRegionFilter) : withinWindow;
+  const c1 = windowForStats.filter(v => inspTier_(v.daysLeft) === 1).length;
+  const c2 = windowForStats.filter(v => inspTier_(v.daysLeft) === 2).length;
+  const c3 = windowForStats.filter(v => inspTier_(v.daysLeft) === 3).length;
 
   // 明細表：套用區域＋天數區間＋站所篩選，依剩餘天數由少到多排序
   let rows = withinWindow;
