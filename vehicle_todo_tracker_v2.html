@@ -8,15 +8,17 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: "Inter", "Noto Sans TC", -apple-system, sans-serif;
+    font-family: "Microsoft JhengHei", "Noto Sans TC", -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 700;
     background: #F5F3ED;
     color: #1C2B39;
   }
   .wrap { max-width: 1280px; margin: 0 auto; padding: 24px; }
 
   .topbar {
-    background: #1C2B39;
-    color: #F5F3ED;
+    background: #B7C3B7;
+    color: #1C2B39;
     border-radius: 10px;
     padding: 20px 24px;
     display: flex;
@@ -27,17 +29,17 @@
     margin-bottom: 20px;
   }
   .topbar h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: 0.5px; }
-  .topbar .sub { font-size: 12px; color: #9FB3C4; margin-top: 4px; font-family: "IBM Plex Mono", monospace; }
+  .topbar .sub { font-size: 12px; color: #4A5A4A; margin-top: 4px; font-family: "IBM Plex Mono", monospace; }
   .stats { display: flex; gap: 12px; flex-wrap: wrap; }
-  .stat { background: rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 16px; text-align: center; min-width: 74px; }
+  .stat { background: rgba(0,0,0,0.06); border-radius: 8px; padding: 8px 16px; text-align: center; min-width: 74px; }
   .stat .num { font-size: 22px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
-  .stat .lbl { font-size: 11px; color: #9FB3C4; margin-top: 2px; }
-  .stat.red .num { color: #E38A82; }
-  .stat.amber .num { color: #E8B76A; }
-  .stat.green .num { color: #7FBF95; }
+  .stat .lbl { font-size: 11px; color: #4A5A4A; margin-top: 2px; }
+  .stat.red .num { color: #A3352E; }
+  .stat.amber .num { color: #A3690F; }
+  .stat.green .num { color: #2F6B45; }
 
   .panel { background: #FFFFFF; border: 1px solid #E1DDD0; border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
-  .panel h2 { font-size: 14px; font-weight: 700; margin: 0 0 14px; color: #2C4A63; text-transform: uppercase; letter-spacing: 0.6px; }
+  .panel h2 { font-size: 14px; font-weight: 700; margin: 0 0 14px; color: #4A5F4A; text-transform: uppercase; letter-spacing: 0.6px; }
 
   .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
   .field label { display: block; font-size: 12px; color: #6B6B63; margin-bottom: 4px; }
@@ -46,12 +48,12 @@
     font-size: 13px; font-family: inherit; background: #FCFBF8; color: #1C2B39;
   }
   .field textarea { resize: vertical; min-height: 36px; }
-  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: #2C4A63; }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: #4A5F4A; }
 
   .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
   button { font-family: inherit; font-size: 13px; font-weight: 600; border-radius: 6px; padding: 9px 18px; cursor: pointer; border: none; }
-  .btn-primary { background: #2C4A63; color: #FFFFFF; }
-  .btn-primary:hover { background: #23394D; }
+  .btn-primary { background: #4A5F4A; color: #FFFFFF; }
+  .btn-primary:hover { background: #3A4F3A; }
   .btn-primary:disabled { background: #A9B7C2; cursor: not-allowed; }
   .btn-ghost { background: transparent; color: #6B6B63; border: 1px solid #D8D3C6; }
   .btn-ghost:hover { background: #F0EEE6; }
@@ -61,7 +63,7 @@
   .filters input[type="text"] { min-width: 180px; }
   .status-tabs { display: flex; gap: 6px; }
   .status-tab { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #D8D3C6; background: #FCFBF8; color: #6B6B63; }
-  .status-tab.active { background: #2C4A63; color: #fff; border-color: #2C4A63; }
+  .status-tab.active { background: #4A5F4A; color: #fff; border-color: #4A5F4A; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6B6B63; padding: 8px 10px; border-bottom: 2px solid #E1DDD0; white-space: nowrap; }
@@ -109,10 +111,10 @@
   .add-self-row { display: flex; gap: 8px; }
   .add-self-row input { flex: 1; margin-bottom: 0; }
 
-  .identity-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #9FB3C4; }
-  .identity-bar .name-chip { background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px; font-weight: 600; color: #F5F3ED; }
-  .identity-bar button { background: transparent; border: 1px solid rgba(255,255,255,0.25); color: #9FB3C4; padding: 4px 10px; font-size: 11px; font-weight: 600; }
-  .identity-bar button:hover { background: rgba(255,255,255,0.1); }
+  .identity-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #4A5A4A; }
+  .identity-bar .name-chip { background: rgba(0,0,0,0.08); padding: 4px 10px; border-radius: 20px; font-weight: 600; color: #1C2B39; }
+  .identity-bar button { background: transparent; border: 1px solid rgba(28,43,57,0.25); color: #4A5A4A; padding: 4px 10px; font-size: 11px; font-weight: 600; }
+  .identity-bar button:hover { background: rgba(0,0,0,0.06); }
 
   .roster-panel { display: none; }
   .roster-panel.show { display: block; }
@@ -129,10 +131,10 @@
   }
 
   .workload-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-  .workload-chip { display: flex; align-items: center; gap: 6px; background: #EFF3F6; border: 1px solid #D8D3C6; border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #2C4A63; }
+  .workload-chip { display: flex; align-items: center; gap: 6px; background: #EAF0E8; border: 1px solid #D8D3C6; border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #4A5F4A; }
   .workload-chip:hover { background: #E4EAF0; }
   .workload-chip .n { font-weight: 700; font-family: "IBM Plex Mono", monospace; }
-  .workload-chip.active { background: #2C4A63; color: #fff; border-color: #2C4A63; }
+  .workload-chip.active { background: #4A5F4A; color: #fff; border-color: #4A5F4A; }
 
   tbody tr.stale { background: #FDF3F1; }
   tbody tr.stale:hover { background: #FBE9E6; }
@@ -141,7 +143,7 @@
   .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
   .pagination button { background: #FCFBF8; border: 1px solid #D8D3C6; color: #6B6B63; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-family: inherit; }
   .pagination button:hover:not(:disabled) { background: #F0EEE6; }
-  .pagination button.active { background: #2C4A63; color: #fff; border-color: #2C4A63; }
+  .pagination button.active { background: #4A5F4A; color: #fff; border-color: #4A5F4A; }
   .pagination button:disabled { color: #C8C4B8; cursor: not-allowed; }
   .pagination .page-info { font-size: 12px; color: #9A968A; margin: 0 6px; }
 </style>
