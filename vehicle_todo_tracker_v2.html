@@ -577,27 +577,15 @@ function isStale(item) {
 // 算出這筆待辦事項「實際最緊急的天數」：待辦本身的預計完成日、跟這台車的定檢到期日，取比較接近的那個。
 // 逾期算負數天數。兩者都沒有的話回傳 Infinity（排到最後）。
 // 這個數字同時拿來分級距，也拿來當同一級距內的排序依據，才不會發生「定檢明明比較急，卻因為待辦自己填的完成日比較晚而被排到後面」的狀況。
-function nearestUrgencyDays_(it) {
+// 這台車的定檢剩餘天數（沒有定檢資料回傳 null）
+function inspectionDaysLeft_(it) {
   const v = lookupVehicle(it.car);
-  const inspD = (v && v.lastInspectionDate) ? daysUntil(v.lastInspectionDate) : null;
-  const taskD = it.due ? daysUntil(it.due) : null;
-  const candidates = [];
-  if (taskD !== null) candidates.push(taskD);
-  if (inspD !== null) candidates.push(inspD);
-  if (candidates.length === 0) return Infinity;
-  return Math.min(...candidates);
+  return (v && v.lastInspectionDate) ? daysUntil(v.lastInspectionDate) : null;
 }
 
-// 排序級距：適用於未處理＋處理中，已結案的不用往前排
+// 已結案的排到最後面，不用往前排；其餘的排序交給 getFilteredSorted_ 裡的兩層比較
 function sortPriority_(it) {
-  if (it.progress === "已結案") return 6;
-  const nearest = nearestUrgencyDays_(it);
-  if (nearest < 0) return 0;      // 逾期（待辦本身或車輛定檢，任一個）
-  if (nearest <= 3) return 1;
-  if (nearest <= 7) return 2;
-  if (nearest <= 30) return 3;    // 30天內（紅字）
-  if (nearest <= 60) return 4;    // 30-60天（黃字）
-  return 5;
+  return it.progress === "已結案" ? 1 : 0;
 }
 
 // 進度的內部儲存值維持「未結案」（相容既有資料），畫面上顯示成「未處理」
@@ -658,8 +646,16 @@ function getFilteredSorted_() {
 
   filtered.sort((a, b) => {
     const pa = sortPriority_(a), pb = sortPriority_(b);
-    if (pa !== pb) return pa - pb;
-    return nearestUrgencyDays_(a) - nearestUrgencyDays_(b);
+    if (pa !== pb) return pa - pb; // 已結案排最後
+
+    // 第一層：定檢提醒剩餘天數，越少越前面（逾期是負數，天數最少/逾期最多天的最前面）；沒有定檢資料的排最後
+    const ia = inspectionDaysLeft_(a), ib = inspectionDaysLeft_(b);
+    const iaVal = ia === null ? Infinity : ia;
+    const ibVal = ib === null ? Infinity : ib;
+    if (iaVal !== ibVal) return iaVal - ibVal;
+
+    // 第二層：定檢天數相同（或都沒有定檢資料）時，比預計完成日，越早的排越前面
+    return (a.due || "9999").localeCompare(b.due || "9999");
   });
 
   return filtered;
