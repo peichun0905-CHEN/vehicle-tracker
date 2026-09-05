@@ -99,6 +99,7 @@
   .count-zero { color: #C8C4B8; }
   .count-hot-amber { color: #D98F32; font-weight: 700; }
   .count-hot-red { color: #C1443C; font-weight: 700; }
+  .count-hot-green { color: #3F7D58; font-weight: 700; }
   .table-scroll { overflow-x: auto; }
   .btn-ghost { background: transparent; color: #6B6B63; border: 1px solid #D8D3C6; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .btn-ghost:hover { background: #F0EEE6; }
@@ -337,8 +338,11 @@ function renderInspectionModule() {
     html += '<table class="summary-table"><thead><tr><th>站所</th><th>20天內</th><th>21-40天</th><th>41-60天</th><th>合計</th></tr></thead><tbody>';
     stationRows.forEach(s => {
       const rowClass = inspStationFilter === s.name ? ' class="selected"' : '';
+      const t1Cell = s.t1 > 0 ? ('<span class="count-hot-red">' + s.t1 + '</span>') : ('<span class="count-zero">0</span>');
+      const t2Cell = s.t2 > 0 ? ('<span class="count-hot-amber">' + s.t2 + '</span>') : ('<span class="count-zero">0</span>');
+      const t3Cell = s.t3 > 0 ? ('<span class="count-hot-green">' + s.t3 + '</span>') : ('<span class="count-zero">0</span>');
       html += '<tr' + rowClass + ' ondblclick="setInspStation_(\'' + s.name.replace(/'/g, "\\'") + '\')">' +
-        '<td>' + escapeHtml(s.name) + '</td><td>' + s.t1 + '</td><td>' + s.t2 + '</td><td>' + s.t3 + '</td><td><strong>' + s.total + '</strong></td></tr>';
+        '<td>' + escapeHtml(s.name) + '</td><td>' + t1Cell + '</td><td>' + t2Cell + '</td><td>' + t3Cell + '</td><td><strong>' + s.total + '</strong></td></tr>';
     });
     html += '</tbody></table>';
   }
