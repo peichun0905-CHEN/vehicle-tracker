@@ -141,7 +141,6 @@
   </main>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ============================================================
    跟 vehicle_todo_tracker 共用同一個 Apps Script 後端，
@@ -389,14 +388,31 @@ function renderInspectionModule() {
   document.getElementById("btn-insp-export").addEventListener("click", () => exportInspExcel_(rows));
 }
 
+// 匯出Excel要用的SheetJS函式庫，改成第一次真的要匯出時才動態載入，不要一開頁面就強制下載
+let xlsxLoadPromise_ = null;
+function loadXlsxLib_() {
+  if (typeof XLSX !== "undefined") return Promise.resolve();
+  if (xlsxLoadPromise_) return xlsxLoadPromise_;
+  xlsxLoadPromise_ = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = () => resolve();
+    s.onerror = () => { xlsxLoadPromise_ = null; reject(new Error("load failed")); };
+    document.head.appendChild(s);
+  });
+  return xlsxLoadPromise_;
+}
+
 // 匯出Excel：匯出「目前篩選條件下」的明細表資料
-function exportInspExcel_(rows) {
-  if (typeof XLSX === "undefined") {
-    alert("匯出功能載入中，請稍後再試一次");
-    return;
-  }
+async function exportInspExcel_(rows) {
   if (!rows || rows.length === 0) {
     alert("目前篩選結果沒有資料可匯出");
+    return;
+  }
+  try {
+    await loadXlsxLib_();
+  } catch (e) {
+    alert("匯出功能載入失敗，請確認網路連線後再試一次");
     return;
   }
   const data = rows.map(v => ({
@@ -573,13 +589,15 @@ function renderDispatchModule() {
   document.getElementById("btn-disp-export").addEventListener("click", () => exportDispExcel_(rows));
 }
 
-function exportDispExcel_(rows) {
-  if (typeof XLSX === "undefined") {
-    alert("匯出功能載入中，請稍後再試一次");
-    return;
-  }
+async function exportDispExcel_(rows) {
   if (!rows || rows.length === 0) {
     alert("目前篩選結果沒有資料可匯出");
+    return;
+  }
+  try {
+    await loadXlsxLib_();
+  } catch (e) {
+    alert("匯出功能載入失敗，請確認網路連線後再試一次");
     return;
   }
   const data = rows.map(v => ({
