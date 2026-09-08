@@ -309,7 +309,6 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ============================================================
    請把下面這行換成你自己部署 Google Apps Script 後拿到的網址
@@ -803,14 +802,31 @@ function filterByHandler(name) {
 }
 
 // ---- 匯出Excel：匯出「目前篩選條件下」的完整結果（不只目前這一頁），欄位跟畫面看到的一致 ----
-function exportToExcel() {
-  if (typeof XLSX === "undefined") {
-    alert("匯出功能載入中，請稍後再試一次");
-    return;
-  }
+// 匯出Excel要用的SheetJS函式庫，改成第一次真的要匯出時才動態載入，不要一開頁面就強制下載
+let xlsxLoadPromise_ = null;
+function loadXlsxLib_() {
+  if (typeof XLSX !== "undefined") return Promise.resolve();
+  if (xlsxLoadPromise_) return xlsxLoadPromise_;
+  xlsxLoadPromise_ = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = () => resolve();
+    s.onerror = () => { xlsxLoadPromise_ = null; reject(new Error("load failed")); };
+    document.head.appendChild(s);
+  });
+  return xlsxLoadPromise_;
+}
+
+async function exportToExcel() {
   const filtered = getFilteredSorted_();
   if (filtered.length === 0) {
     alert("目前篩選結果沒有資料可匯出");
+    return;
+  }
+  try {
+    await loadXlsxLib_();
+  } catch (e) {
+    alert("匯出功能載入失敗，請確認網路連線後再試一次");
     return;
   }
   const rows = filtered.map(it => {
