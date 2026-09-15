@@ -359,19 +359,21 @@ function renderInspectionModule() {
   } else {
     html += '<div class="table-scroll"><table><thead><tr>' +
       '<th>區域</th><th>站所名稱</th><th>車牌號碼</th><th>車代號</th><th>服務性質</th>' +
-      '<th>出車天數</th><th>實際站所</th><th>PDT輸入日期</th><th>使用人</th><th>原使用站所</th><th>備註</th>' +
+      '<th>可驗日期</th><th>最後定檢日</th><th>剩餘時間</th><th>PDT輸入日期</th><th>使用人</th><th>原使用站所</th><th>備註</th>' +
       '</tr></thead><tbody>';
     rows.forEach(v => {
       const t = inspTier_(v.daysLeft);
       const daysClass = t === 1 ? 'day-overdue' : (t === 2 ? 'day-soon' : ''); // 20天內紅字、21-40天橘字，41天以上不特別上色
+      const daysText = v.daysLeft < 0 ? ('已逾期' + Math.abs(v.daysLeft) + '天') : ('剩' + v.daysLeft + '天');
       html += '<tr>' +
         '<td>' + escapeHtml(v.region) + '</td>' +
         '<td>' + escapeHtml(v.station) + '</td>' +
         '<td class="mono">' + escapeHtml(v.plate) + '</td>' +
         '<td class="mono">' + escapeHtml(v.carCode) + '</td>' +
         '<td>' + escapeHtml(v.serviceType) + '</td>' +
-        '<td class="mono ' + daysClass + '">' + v.daysLeft + '</td>' +
-        '<td>' + escapeHtml(v.actualStation) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.validDate) + '</td>' +
+        '<td class="mono">' + escapeHtml(v.lastInspectionDate) + '</td>' +
+        '<td class="mono ' + daysClass + '">' + daysText + '</td>' +
         '<td class="mono">' + escapeHtml(v.pdtDate) + '</td>' +
         '<td>' + escapeHtml(v.user) + '</td>' +
         '<td>' + escapeHtml(v.origStation) + '</td>' +
@@ -420,7 +422,8 @@ async function exportInspExcel_(rows) {
   }
   const data = rows.map(v => ({
     "區域": v.region, "站所名稱": v.station, "車牌號碼": v.plate, "車代號": v.carCode,
-    "服務性質": v.serviceType, "出車天數": v.daysLeft, "實際站所": v.actualStation,
+    "服務性質": v.serviceType, "可驗日期": v.validDate, "最後定檢日": v.lastInspectionDate,
+    "剩餘時間": v.daysLeft < 0 ? ("已逾期" + Math.abs(v.daysLeft) + "天") : ("剩" + v.daysLeft + "天"),
     "PDT輸入日期": v.pdtDate, "使用人": v.user, "原使用站所": v.origStation, "備註": v.remark
   }));
   const ws = XLSX.utils.json_to_sheet(data);
@@ -565,7 +568,7 @@ function renderDispatchModule() {
     html += '<div class="empty">目前篩選條件下沒有資料</div>';
   } else {
     html += '<div class="table-scroll"><table><thead><tr>' +
-      '<th>區域</th><th>站所</th><th>服務性質</th><th>車號</th><th>PDT輸入日期</th><th>使用人</th><th>未使用天數</th><th>備註</th>' +
+      '<th>區域</th><th>站所</th><th>實際站所</th><th>服務性質</th><th>車號</th><th>PDT輸入日期</th><th>使用人</th><th>未使用天數</th><th>備註</th>' +
       '</tr></thead><tbody>';
     rows.forEach(v => {
       const t = dispTier_(v.idleDays);
@@ -574,6 +577,7 @@ function renderDispatchModule() {
       html += '<tr>' +
         '<td>' + escapeHtml(v.region) + '</td>' +
         '<td>' + escapeHtml(v.station) + '</td>' +
+        '<td>' + escapeHtml(v.actualStation) + '</td>' +
         '<td>' + escapeHtml(v.serviceType) + '</td>' +
         '<td class="mono">' + escapeHtml(v.plate) + '</td>' +
         '<td class="mono">' + escapeHtml(v.pdtDate) + '</td>' +
@@ -607,7 +611,7 @@ async function exportDispExcel_(rows) {
     return;
   }
   const data = rows.map(v => ({
-    "區域": v.region, "站所": v.station, "服務性質": v.serviceType, "車號": v.plate,
+    "區域": v.region, "站所": v.station, "實際站所": v.actualStation, "服務性質": v.serviceType, "車號": v.plate,
     "PDT輸入日期": v.pdtDate, "使用人": v.user,
     "未使用天數": v.idleDays == null ? "無PDT紀錄" : (v.idleDays + "天"),
     "備註": v.remark
