@@ -436,6 +436,8 @@ async function exportInspExcel_(rows) {
 let dispRegionFilter = "";
 let dispBucketFilter = null;  // 1＝15-30天未使用、2＝31天以上未使用
 let dispStationFilter = null;
+let dispPlateQuery = "";      // 車號/車代號查詢字串（可查單一車輛）。非空時：不受未使用天數分級限制，
+                               // 直接從「全部有在追蹤的車輛」裡比對車號/車代號，方便查任一台車目前的出車狀態
 
 // 這幾種服務性質不列入出車管理監控（自用車、拖車廂、車架類不算「該常態出車卻沒出車」）
 const DISPATCH_EXCLUDE_KEYWORDS_ = ["自用小客車", "自用小型車", "車廂", "車架"];
@@ -481,6 +483,19 @@ function setDispStation_(name) {
   renderDispatchModule();
 }
 
+// 執行/更新車號查詢：從輸入框讀值，重新畫出車管理模組
+function runDispPlateQuery_() {
+  const input = document.getElementById("disp-plate-search");
+  dispPlateQuery = input ? input.value.trim() : "";
+  renderDispatchModule();
+}
+
+// 清除車號查詢，回到原本依未使用天數分級的明細表
+function clearDispPlateQuery_() {
+  dispPlateQuery = "";
+  renderDispatchModule();
+}
+
 function renderDispatchModule() {
   const area = document.getElementById("content-area");
   const all = computeDispRows_();
@@ -498,10 +513,20 @@ function renderDispatchModule() {
   const d2 = windowForStats.filter(v => dispTier_(v.idleDays) === 2).length;
   const d3 = windowForStats.filter(v => dispTier_(v.idleDays) === 3).length;
 
-  let rows = idle;
-  if (dispRegionFilter) rows = rows.filter(v => v.region === dispRegionFilter);
-  if (dispBucketFilter) rows = rows.filter(v => dispTier_(v.idleDays) === dispBucketFilter);
-  if (dispStationFilter) rows = rows.filter(v => v.station === dispStationFilter);
+  const plateQuery = dispPlateQuery.trim();
+  let rows;
+  if (plateQuery) {
+    // 車號查詢模式：不受未使用天數分級（idle）限制，從全部有在追蹤的車輛裡直接比對車號/車代號，
+    // 這樣就算車輛目前是正常出車狀態（0-1天）也查得到
+    const q = plateQuery.toUpperCase();
+    rows = all.filter(v => (v.plate || "").toUpperCase().indexOf(q) > -1 || (v.carCode || "").toUpperCase().indexOf(q) > -1);
+    if (dispRegionFilter) rows = rows.filter(v => v.region === dispRegionFilter);
+  } else {
+    rows = idle;
+    if (dispRegionFilter) rows = rows.filter(v => v.region === dispRegionFilter);
+    if (dispBucketFilter) rows = rows.filter(v => dispTier_(v.idleDays) === dispBucketFilter);
+    if (dispStationFilter) rows = rows.filter(v => v.station === dispStationFilter);
+  }
   rows.sort((a, b) => (b.idleDays == null ? 99999 : b.idleDays) - (a.idleDays == null ? 99999 : a.idleDays)); // 未使用天數多的排前面，無紀錄的視為最嚴重排最前
 
   const byStation = {};
@@ -539,6 +564,9 @@ function renderDispatchModule() {
     html += '<option value="' + escapeHtml(r) + '"' + (r === dispRegionFilter ? ' selected' : '') + '>' + escapeHtml(r) + '</option>';
   });
   html += '</select>';
+  html += '<input type="text" id="disp-plate-search" placeholder="查詢單一車號/車代號" value="' + escapeHtml(plateQuery) + '">';
+  html += '<button class="btn-ghost" id="btn-disp-plate-search" type="button">查詢</button>';
+  if (plateQuery) html += '<button class="btn-ghost" onclick="clearDispPlateQuery_()" type="button">清除車號查詢 ×</button>';
   if (dispBucketFilter) html += '<button class="btn-ghost" onclick="setDispBucket_(null)" type="button">清除天數篩選 ×</button>';
   if (dispStationFilter) html += '<button class="btn-ghost" onclick="setDispStation_(null)" type="button">清除站所篩選：' + escapeHtml(dispStationFilter) + ' ×</button>';
   html += '<button class="btn-ghost" id="btn-disp-export" type="button">匯出Excel</button>';
@@ -563,17 +591,18 @@ function renderDispatchModule() {
   html += '</div>';
 
   html += '<div class="panel">';
-  html += '<h2>車輛明細<span class="count">共' + rows.length + '台</span></h2>';
+  html += '<h2>車輛明細<span class="count">共' + rows.length + '台' + (plateQuery ? '（車號查詢模式，不受未使用天數篩選限制）' : '') + '</span></h2>';
   if (rows.length === 0) {
-    html += '<div class="empty">目前篩選條件下沒有資料</div>';
+    html += '<div class="empty">' + (plateQuery ? '查無符合「' + escapeHtml(plateQuery) + '」的車輛' : '目前篩選條件下沒有資料') + '</div>';
   } else {
     html += '<div class="table-scroll"><table><thead><tr>' +
-      '<th>區域</th><th>站所</th><th>實際站所</th><th>服務性質</th><th>車號</th><th>PDT輸入日期</th><th>使用人</th><th>未使用天數</th><th>備註</th>' +
+      '<th>區域</th><th>站所</th><th>實際站所</th><th>服務性質</th><th>車號</th><th>PDT輸入日期</th><th>使用人</th><th>未使用天數</th>' +
+      '<th>PDT回覆日期</th><th>PDT回覆備註</th><th>PDT回覆類別</th><th>備註</th>' +
       '</tr></thead><tbody>';
     rows.forEach(v => {
       const t = dispTier_(v.idleDays);
       const daysClass = t === 3 ? 'day-overdue' : (t === 2 ? 'day-soon' : (t === 1 ? 'day-warn' : ''));
-      const daysText = v.idleDays == null ? '無PDT紀錄' : (v.idleDays + '天');
+      const daysText = v.idleDays == null ? '無PDT紀錄' : String(v.idleDays);
       html += '<tr>' +
         '<td>' + escapeHtml(v.region) + '</td>' +
         '<td>' + escapeHtml(v.station) + '</td>' +
@@ -583,6 +612,9 @@ function renderDispatchModule() {
         '<td class="mono">' + escapeHtml(v.pdtDate) + '</td>' +
         '<td>' + escapeHtml(v.user) + '</td>' +
         '<td class="mono ' + daysClass + '">' + daysText + '</td>' +
+        '<td class="mono">' + escapeHtml(v.pdtReplyDate) + '</td>' +
+        '<td>' + escapeHtml(v.pdtReplyNote) + '</td>' +
+        '<td>' + escapeHtml(v.pdtReplyVendor) + '</td>' +
         '<td>' + escapeHtml(v.remark) + '</td>' +
         '</tr>';
     });
@@ -595,6 +627,10 @@ function renderDispatchModule() {
     dispRegionFilter = e.target.value;
     dispStationFilter = null;
     renderDispatchModule();
+  });
+  document.getElementById("btn-disp-plate-search").addEventListener("click", runDispPlateQuery_);
+  document.getElementById("disp-plate-search").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); runDispPlateQuery_(); }
   });
   document.getElementById("btn-disp-export").addEventListener("click", () => exportDispExcel_(rows));
 }
@@ -613,7 +649,8 @@ async function exportDispExcel_(rows) {
   const data = rows.map(v => ({
     "區域": v.region, "站所": v.station, "實際站所": v.actualStation, "服務性質": v.serviceType, "車號": v.plate,
     "PDT輸入日期": v.pdtDate, "使用人": v.user,
-    "未使用天數": v.idleDays == null ? "無PDT紀錄" : (v.idleDays + "天"),
+    "未使用天數": v.idleDays == null ? "無PDT紀錄" : v.idleDays,
+    "PDT回覆日期": v.pdtReplyDate || "", "PDT回覆備註": v.pdtReplyNote || "", "PDT回覆類別": v.pdtReplyVendor || "",
     "備註": v.remark
   }));
   const ws = XLSX.utils.json_to_sheet(data);
