@@ -467,6 +467,38 @@ function daysSince_(dateStr) {
   return d === null ? null : -d; // daysUntil是「到未來還剩幾天」，這裡要反過來算「過去多少天」
 }
 
+// PDT回覆日期從 yyyy-MM-dd 轉成 yyyy-M/d 顯示（去掉月/日的前導0）
+function formatPdtReplyDate_(dateStr) {
+  if (!dateStr) return "";
+  const parts = String(dateStr).split("-");
+  if (parts.length !== 3) return dateStr;
+  const y = parts[0];
+  const m = String(Number(parts[1]));
+  const d = String(Number(parts[2]));
+  if (isNaN(Number(parts[1])) || isNaN(Number(parts[2]))) return dateStr;
+  return y + "-" + m + "/" + d;
+}
+
+// PDT回覆備註(T欄)開頭常帶數字代號（例如「10 停維修廠(無使用)備註維修廠名稱」），顯示時不需要這個代號
+function stripPdtReplyCode_(t) {
+  return String(t || "").replace(/^\d+\s*/, "");
+}
+
+// 把PDT回覆的日期／備註(T欄)／類別(U欄)整合成一段文字，直接接在原本的備註前面
+function pdtReplySummary_(v) {
+  if (!v.pdtReplyNote && !v.pdtReplyVendor && !v.pdtReplyDate) return "";
+  const dateTxt = formatPdtReplyDate_(v.pdtReplyDate);
+  const noteTxt = stripPdtReplyCode_(v.pdtReplyNote);
+  const vendorTxt = v.pdtReplyVendor || "";
+  return dateTxt + noteTxt + vendorTxt;
+}
+
+// 出車管理明細表「備註」欄要顯示的最終文字：PDT回覆摘要（若有）+ 原本的備註
+function dispRemarkText_(v) {
+  const summary = pdtReplySummary_(v);
+  return summary ? (summary + (v.remark || "")) : (v.remark || "");
+}
+
 function dispStatCardHtml_(tier, label, count) {
   const active = dispBucketFilter === tier ? ' active' : '';
   return '<div class="stat-card dtier-' + tier + active + '" onclick="setDispBucket_(' + tier + ')">' +
@@ -596,8 +628,7 @@ function renderDispatchModule() {
     html += '<div class="empty">' + (plateQuery ? '查無符合「' + escapeHtml(plateQuery) + '」的車輛' : '目前篩選條件下沒有資料') + '</div>';
   } else {
     html += '<div class="table-scroll"><table><thead><tr>' +
-      '<th>區域</th><th>站所</th><th>實際站所</th><th>服務性質</th><th>車號</th><th>PDT輸入日期</th><th>使用人</th><th>未使用天數</th>' +
-      '<th>PDT回覆日期</th><th>PDT回覆備註</th><th>PDT回覆類別</th><th>備註</th>' +
+      '<th>區域</th><th>站所</th><th>實際站所</th><th>服務性質</th><th>車號</th><th>PDT輸入日期</th><th>使用人</th><th>未使用天數</th><th>備註</th>' +
       '</tr></thead><tbody>';
     rows.forEach(v => {
       const t = dispTier_(v.idleDays);
@@ -612,10 +643,7 @@ function renderDispatchModule() {
         '<td class="mono">' + escapeHtml(v.pdtDate) + '</td>' +
         '<td>' + escapeHtml(v.user) + '</td>' +
         '<td class="mono ' + daysClass + '">' + daysText + '</td>' +
-        '<td class="mono">' + escapeHtml(v.pdtReplyDate) + '</td>' +
-        '<td>' + escapeHtml(v.pdtReplyNote) + '</td>' +
-        '<td>' + escapeHtml(v.pdtReplyVendor) + '</td>' +
-        '<td>' + escapeHtml(v.remark) + '</td>' +
+        '<td>' + escapeHtml(dispRemarkText_(v)) + '</td>' +
         '</tr>';
     });
     html += '</tbody></table></div>';
@@ -650,8 +678,7 @@ async function exportDispExcel_(rows) {
     "區域": v.region, "站所": v.station, "實際站所": v.actualStation, "服務性質": v.serviceType, "車號": v.plate,
     "PDT輸入日期": v.pdtDate, "使用人": v.user,
     "未使用天數": v.idleDays == null ? "無PDT紀錄" : v.idleDays,
-    "PDT回覆日期": v.pdtReplyDate || "", "PDT回覆備註": v.pdtReplyNote || "", "PDT回覆類別": v.pdtReplyVendor || "",
-    "備註": v.remark
+    "備註": dispRemarkText_(v)
   }));
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
