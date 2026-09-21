@@ -59,6 +59,8 @@
   .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
   .filters select, .filters input { padding: 7px 10px; border: 1px solid #D8D3C6; border-radius: 6px; font-size: 13px; background: #FCFBF8; font-family: inherit; }
   .filters input[type="text"] { min-width: 180px; }
+  .filters input[type="number"] { width: 92px; }
+  .filters .filter-label { font-size: 13px; color: #6B6B63; display: inline-flex; align-items: center; gap: 6px; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6B6B63; padding: 8px 10px; border: 1px solid #EFEDE4; white-space: nowrap; }
@@ -436,6 +438,7 @@ async function exportInspExcel_(rows) {
 let dispRegionFilter = "";
 let dispBucketFilter = null;  // 1＝15-30天未使用、2＝31天以上未使用
 let dispStationFilter = null;
+let dispMinDays = null;       // 「未出車天數≥N天」篩選（null＝不篩選）。設7就是只看未使用7天及以上的車輛
 let dispPlateQuery = "";      // 車號/車代號查詢字串（可查單一車輛）。非空時：不受未使用天數分級限制，
                                // 直接從「全部有在追蹤的車輛」裡比對車號/車代號，方便查任一台車目前的出車狀態
 
@@ -528,6 +531,25 @@ function clearDispPlateQuery_() {
   renderDispatchModule();
 }
 
+// 讀取「未出車天數」輸入框：空白/非數字/小於1 視為不篩選
+function runDispMinDays_() {
+  const input = document.getElementById("disp-min-days");
+  const n = input ? parseInt(input.value, 10) : NaN;
+  dispMinDays = (isNaN(n) || n < 1) ? null : n;
+  renderDispatchModule();
+}
+
+function clearDispMinDays_() {
+  dispMinDays = null;
+  renderDispatchModule();
+}
+
+// 是否符合「未出車天數≥N天」：完全沒有PDT紀錄(idleDays為null)視為最久未使用，一律算符合
+function passDispMinDays_(v) {
+  if (dispMinDays === null) return true;
+  return v.idleDays === null || v.idleDays >= dispMinDays;
+}
+
 function renderDispatchModule() {
   const area = document.getElementById("content-area");
   const all = computeDispRows_();
@@ -538,7 +560,8 @@ function renderDispatchModule() {
   }
 
   const regions = Array.from(new Set(stationList.map(s => s.region).filter(r => r))).sort();
-  const idle = all.filter(v => dispTier_(v.idleDays) > 0); // 只留2天以上未使用的（含無PDT紀錄），0-1天算正常不列入
+  // 只留2天以上未使用的（含無PDT紀錄），0-1天算正常不列入；若有設「未出車天數≥N」，再多篩一層（上方三張卡片、各站彙總、車輛明細都會一起跟著變）
+  const idle = all.filter(v => dispTier_(v.idleDays) > 0 && passDispMinDays_(v));
 
   const windowForStats = dispRegionFilter ? idle.filter(v => v.region === dispRegionFilter) : idle;
   const d1 = windowForStats.filter(v => dispTier_(v.idleDays) === 1).length;
@@ -596,6 +619,9 @@ function renderDispatchModule() {
     html += '<option value="' + escapeHtml(r) + '"' + (r === dispRegionFilter ? ' selected' : '') + '>' + escapeHtml(r) + '</option>';
   });
   html += '</select>';
+  html += '<label class="filter-label">未出車天數 ≥ <input type="number" id="disp-min-days" min="1" step="1" list="disp-min-days-list" placeholder="例如 7" value="' + (dispMinDays === null ? '' : dispMinDays) + '"> 天</label>';
+  html += '<datalist id="disp-min-days-list"><option value="3"><option value="7"><option value="14"><option value="30"><option value="60"></datalist>';
+  if (dispMinDays !== null) html += '<button class="btn-ghost" onclick="clearDispMinDays_()" type="button">清除天數 ×</button>';
   html += '<input type="text" id="disp-plate-search" placeholder="查詢單一車號/車代號" value="' + escapeHtml(plateQuery) + '">';
   html += '<button class="btn-ghost" id="btn-disp-plate-search" type="button">查詢</button>';
   if (plateQuery) html += '<button class="btn-ghost" onclick="clearDispPlateQuery_()" type="button">清除車號查詢 ×</button>';
@@ -607,7 +633,7 @@ function renderDispatchModule() {
   html += '<div class="panel">';
   html += '<h2>各站彙總<span class="count">依合計數由多到少排序 · 雙擊站名可篩選明細</span></h2>';
   if (stationRows.length === 0) {
-    html += '<div class="empty">目前沒有2天以上未使用的車輛 🎉</div>';
+    html += '<div class="empty">' + (dispMinDays !== null ? '沒有未出車滿' + dispMinDays + '天以上的車輛 🎉' : '目前沒有2天以上未使用的車輛 🎉') + '</div>';
   } else {
     html += '<table class="summary-table"><thead><tr><th>站所</th><th>2-14天</th><th>15-30天</th><th>31天以上</th><th>合計</th></tr></thead><tbody>';
     stationRows.forEach(s => {
@@ -623,7 +649,7 @@ function renderDispatchModule() {
   html += '</div>';
 
   html += '<div class="panel">';
-  html += '<h2>車輛明細<span class="count">共' + rows.length + '台' + (plateQuery ? '（車號查詢模式，不受未使用天數篩選限制）' : '') + '</span></h2>';
+  html += '<h2>車輛明細<span class="count">共' + rows.length + '台' + (plateQuery ? '（車號查詢模式，不受未使用天數篩選限制）' : (dispMinDays !== null ? '（未出車 ≥ ' + dispMinDays + ' 天）' : '')) + '</span></h2>';
   if (rows.length === 0) {
     html += '<div class="empty">' + (plateQuery ? '查無符合「' + escapeHtml(plateQuery) + '」的車輛' : '目前篩選條件下沒有資料') + '</div>';
   } else {
@@ -655,6 +681,11 @@ function renderDispatchModule() {
     dispRegionFilter = e.target.value;
     dispStationFilter = null;
     renderDispatchModule();
+  });
+  const minDaysInput = document.getElementById("disp-min-days");
+  minDaysInput.addEventListener("change", runDispMinDays_); // 離開輸入框或按上下箭頭時套用
+  minDaysInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); runDispMinDays_(); }
   });
   document.getElementById("btn-disp-plate-search").addEventListener("click", runDispPlateQuery_);
   document.getElementById("disp-plate-search").addEventListener("keydown", e => {
@@ -696,6 +727,9 @@ async function init() {
   switchModule("inspection");
   setInterval(async () => {
     await loadData();
+    // 正在輸入「未出車天數」時先不重畫，避免打到一半被 30 秒自動更新洗掉
+    const ae = document.activeElement;
+    if (ae && ae.id === "disp-min-days") return;
     renderCurrentModule();
   }, 30000);
 }
